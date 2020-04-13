@@ -1,0 +1,110 @@
+---
+title: "Homework1"
+author: "Ian Frankenburg"
+date: "4/7/2020"
+header-includes:
+   - \usepackage{bm}
+   - \usepackage{algorithmic}
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(latex2exp)
+```
+\newcommand{\indep}{\perp \!\!\! \perp}
+
+# Bayesian Adaptive Lasso
+## Part a)
+```{r,fig.height = 4, fig.width = 4, fig.align = "center"}
+n <- 5000
+plot(density(rnorm(n,0,1)), main=TeX(paste("$\\beta$", "marginal")))
+```
+
+## Part b)
+```{r, fig.height = 4, fig.width = 4, fig.align = "center"}
+lambda <- sqrt(2)
+tau.sq <- rgamma(n,shape=1,rate = lambda^2/2)
+beta.marginal <- rnorm(n,0,sqrt(tau.sq))
+plot(density(beta.marginal), main=TeX(paste("$\\lambda^2 = 2$")), xlim=c(-5,5))
+```
+
+
+## Part c)
+```{r}
+set.seed(1)
+par(mfrow=c(2,2)) 
+rates <- c(1,3,5,10)
+for(b in rates){
+  lambda <- 1/rgamma(n,1,b)
+  tau.sq <- rgamma(n,shape=1,rate = lambda^2/2)
+  beta.marginal <- rnorm(n,0,sqrt(tau.sq))
+  plot(density(beta.marginal), main=paste("rate b = ",b),xlim=c(-5,5))
+}
+```
+
+## Part d) and e)
+I will implement a Gibbs Sampler. The model is
+$$
+\begin{aligned}
+\pmb{Y}|\pmb\beta,\sigma^2 &\sim N(\pmb{X\beta},\sigma^2\pmb{I})\\
+\beta_j|\tau^2_j &\sim N(0,\tau^2_j)\\
+\tau^2_j &\sim \text{Gamma}(1,\frac{\lambda^2}{2})\\
+\lambda &\sim \text{Inverse-Gamma}(a,1/b)\\
+\sigma^2 &\sim \text{Inverse-Gamma}(0.1,0.1).
+\end{aligned}
+$$
+I need the full conditionals
+$$
+\{\beta_j| \pmb{Y},\tau_j^2, \sigma^2, \lambda\}\text{ and } \{\sigma^2| \pmb{Y},\tau_j^2, \beta_j^2, \lambda\}.
+$$
+I'll start with the posterior
+$$
+\begin{aligned}
+p(\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda|\pmb{Y})&\propto p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)\\
+&\qquad \times p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
+&\qquad \times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\sigma^2).
+\end{aligned}
+$$
+As a function of $\pmb{\beta}$ and $\sigma^2$, this is proportional to
+$$
+\begin{aligned}
+  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
+  p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)p(\sigma^2)\\
+  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)N(0,\Sigma)IG(a,b)\\
+  =&.
+\end{aligned}
+$$
+Similarly, I can get the full conditional of $\sigma^2$ since it's proportional to
+$$
+\begin{aligned}
+  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)p(\sigma^2)\\
+  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(a,b).
+\end{aligned}
+$$
+Now that I have the full conditionals, a Gibbs Sampling routine will follow
+
+\begin{algorithmic}
+\STATE $i\gets 10$
+\FOR{$s \text{ in } niter$} 
+        \STATE $\pmb\beta^{(s+1)}\sim p(\pmb\beta|\sigma^{2(s)},)$
+        \STATE $\sigma^{2(s+1)}\sim p(\sigma^2|\pmb\beta^{(s+1)},)$
+\ENDFOR 
+\end{algorithmic}
+
+```{r}
+# Sampling from Normal-Inverse-Gamma
+rnorm.invgamma <- function(n, mu, sigma2, a, b) {
+    tau <- 1/rgamma(n, a, b)
+    sample <- rnorm(n, mu, sqrt(1/(sigma2*tau)))
+    return(sample)
+}
+for(i in 1:n){
+  tau <- 1/rgamma(n, a, b)
+  sigma2.rep <- rnorm(n, mu, sqrt(1/(sigma2*tau)))
+  
+}
+```
+
+
+

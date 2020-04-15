@@ -110,27 +110,27 @@ $$
   =&\quad N(\pmb{X\beta},\sigma^2\pmb I)\cdot\prod_{i=1}^pN(0,\tau_i^2).
 \end{aligned}
 $$
-So my sampling routine will combine Gibbs to sample from $\sigma^2$ and Metropolis to sample from $\pmb\beta$.
+I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution $\pmb{\hat\beta}$.
 
-In the actual sampling routine, I can simply generate the $\tau_j$'s conditional on a $\lambda$ value and then place these values in a matrix $\Sigma$, which I'll have appropriately hard-coded.
-Now that I have the full conditionals, at a high-level, the Gibbs Sampling routine will progress as. Suppose I have a $\pmb\beta^{(0)}$. Then I sample a $\sigma^{2(0)}$
 \begin{algorithm}
+\DontPrintSemicolon
 \setstretch{1.5}
   \KwResult{Samples from joint posterior $p(\pmb\beta,\sigma^2|\pmb y)$ }
-  \For{s in \# Samples}{
-    $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\\
-    $\lambda \sim IG(0.1,0.1)$\\
-    $\tau_1^2,\ldots,\tau_p^2\overset{iid}{\sim} IG(1,\lambda^2/2)$\\
-    $\pmb\beta^{*}\sim N_p(\pmb\beta^{(s)},\delta\pmb I)$\\
-    $r=\frac{p(\pmb y|\pmb\beta^{*},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})p(\pmb\beta^{*}|\tau^2_1,\ldots,\tau^2_p)}{p(\pmb y|\pmb\beta^{(s)},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})p(\pmb\beta^{(s)}|\tau^2_1,\ldots,\tau^2_p)}$\\
-    $u\sim Unif(0,1)$\\
-    \eIf{$u<r$}{
+  \For{s in \# samples}{
+    $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\;
+    $\lambda \sim IG(0.1,0.1)$\;
+    $\tau_1^2,\ldots,\tau_p^2\overset{iid}{\sim} IG(1,\lambda^2/2)$\;
+    $\pmb\beta^{*}\sim N_p(\pmb\beta^{(s)},\delta\pmb I)$\;
+    $\log(r)=\log p(\pmb y|\pmb\beta^{*},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})+\log p(\pmb\beta^{*}|\tau^2_1,\ldots,\tau^2_p)$\; 
+    $\qquad\qquad\qquad-\log p(\pmb y|\pmb\beta^{(s)},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})-\log p(\pmb\beta^{(s)}|\tau^2_1,\ldots,\tau^2_p)$\;
+    $u\sim Unif(0,1)$\;
+    \eIf{$\log(u)<\log(r)$}{
         $\pmb\beta^{(s+1)}=\pmb\beta^*$
     }{
         $\pmb\beta^{(s+1)}=\pmb\beta^{(s)}$
     }
     }   
-  \caption{Combining Gibbs and Metropolis}
+  \caption{Gibbs and Metropolis}
 \end{algorithm}
 
 \pagebreak
@@ -138,7 +138,7 @@ Now that I have the full conditionals, at a high-level, the Gibbs Sampling routi
 temp
 \end{tcolorbox}
 
-```{r, eval=T,warning=F}
+```{r, eval=F,warning=F}
 set.seed(1)
 data("diabetes")
 X <- cbind(rep(1,n),diabetes$x); y <- diabetes$y; n <- nrow(X); p <- ncol(X)

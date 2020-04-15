@@ -1,36 +1,52 @@
 ---
-title: "Homework1"
+title: "Homework 1"
 author: "Ian Frankenburg"
 date: "4/7/2020"
 header-includes:
    - \usepackage{bm}
    - \usepackage{algorithmic}
+   - \usepackage[]{algorithm2e}
+   - \usepackage{tikz,lipsum,lmodern}
+   - \usepackage[most]{tcolorbox}
+   - \usepackage{setspace}
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.pos = 'H')
 library(latex2exp)
+library(mvtnorm)
+library(lars)
+library(glmnet)
 ```
-\newcommand{\indep}{\perp \!\!\! \perp}
 
 # Bayesian Adaptive Lasso
-## Part a)
-```{r,fig.height = 4, fig.width = 4, fig.align = "center"}
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part a.}]
+Consider $p = 1$. Simulate 5,000 Monte Carlo samples from the conditional prior $\pmb\beta | \tau^2 = 1$ and obtain a plot of the density using the \textsf{R} function density.
+\end{tcolorbox}
+```{r,fig.height = 3.5, fig.width = 3.5, fig.align = "center"}
 n <- 5000
 plot(density(rnorm(n,0,1)), main=TeX(paste("$\\beta$", "marginal")))
 ```
 
-## Part b)
-```{r, fig.height = 4, fig.width = 4, fig.align = "center"}
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part b.}]
+Consider $p = 1$. Simulate 5,000 Monte Carlo samples from the marginal prior $\pmb\beta$, considering $\lambda^2 = 2$, so that $\mathbb E(\tau^2|\lambda) = 1$. Obtain a plot of the density as in \textbf{a.}
+\end{tcolorbox}
+
+```{r, fig.height = 3.5, fig.width = 3.5, fig.align = "center"}
 lambda <- sqrt(2)
 tau.sq <- rgamma(n,shape=1,rate = lambda^2/2)
 beta.marginal <- rnorm(n,0,sqrt(tau.sq))
 plot(density(beta.marginal), main=TeX(paste("$\\lambda^2 = 2$")), xlim=c(-5,5))
 ```
 
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part c.}]
+Consider $p = 1$. Add a hyper prior on $\gamma = 1/\gamma \sim Gamma(a,rate = b)$. Assess how the marginal prior of $\pmb\beta$ changes for $a = 1$ and values of $b \geq 1$.
+\end{tcolorbox}
 
-## Part c)
 ```{r}
 set.seed(1)
 par(mfrow=c(2,2)) 
@@ -43,8 +59,12 @@ for(b in rates){
 }
 ```
 
-## Part d) and e)
-I will implement a Gibbs Sampler. The model is
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part d.}]
+Considering the hyper prior in \textbf{c.}, describe a Markov Chain Monte Carlo algorithm to sample from the posterior distribution of $\pmb\beta$ and $\sigma^2$.
+\end{tcolorbox}
+
+I will implement a joint Gibbs and Metropolis sampler. The model is
 $$
 \begin{aligned}
 \pmb{Y}|\pmb\beta,\sigma^2 &\sim N(\pmb{X\beta},\sigma^2\pmb{I})\\
@@ -54,57 +74,118 @@ $$
 \sigma^2 &\sim \text{Inverse-Gamma}(0.1,0.1).
 \end{aligned}
 $$
-I need the full conditionals
+To start, I need the full conditional
 $$
-\{\beta_j| \pmb{Y},\tau_j^2, \sigma^2, \lambda\}\text{ and } \{\sigma^2| \pmb{Y},\tau_j^2, \beta_j^2, \lambda\}.
+\{\sigma^2| \pmb{Y},\beta_1,\ldots,\beta_p,\tau_1^2,\ldots,\tau_p^2, \lambda\},
 $$
-I'll start with the posterior
+so I'll start with the posterior
 $$
 \begin{aligned}
 p(\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda|\pmb{Y})&\propto p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)\\
 &\qquad \times p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
-&\qquad \times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\sigma^2).
+&\qquad \times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\lambda)p(\sigma^2).
 \end{aligned}
 $$
-As a function of $\pmb{\beta}$ and $\sigma^2$, this is proportional to
-$$
-\begin{aligned}
-  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
-  p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)p(\sigma^2)\\
-  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)N(0,\Sigma)IG(a,b)\\
-  =&.
-\end{aligned}
-$$
-Similarly, I can get the full conditional of $\sigma^2$ since it's proportional to
+As a function of just $\sigma^2$, this is proportional to
 $$
 \begin{aligned}
   &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)p(\sigma^2)\\
   =&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(a,b).
 \end{aligned}
 $$
-Now that I have the full conditionals, a Gibbs Sampling routine will follow
+Time to show this is inverse-gamma distributed.
+$$
+\begin{aligned}
+&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(a,b)\\
+\propto \ &(\sigma^2)^{-n/2}\exp\big\{-\frac{1}{2\sigma^2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}(\sigma^2)^{a-1}\exp\big\{-\frac{b}{\sigma^2}\big\}\\
+= \ &(\sigma^2)^{-(n/2+a)-1}\exp\big\{-\frac{1}{\sigma^2}(2b+\frac{1}{2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}\\
+= \ & IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})/2)
+\end{aligned}
+$$
+As a function of $\pmb\beta$, the conditional is non-standard, but it's proportional to
+$$
+\begin{aligned}
+  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
+  p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
+  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)\cdot\prod_{i=1}^pN(0,\tau_i^2).
+\end{aligned}
+$$
+So my sampling routine will combine Gibbs to sample from $\sigma^2$ and Metropolis to sample from $\pmb\beta$.
 
-\begin{algorithmic}
-\STATE $i\gets 10$
-\FOR{$s \text{ in } niter$} 
-        \STATE $\pmb\beta^{(s+1)}\sim p(\pmb\beta|\sigma^{2(s)},)$
-        \STATE $\sigma^{2(s+1)}\sim p(\sigma^2|\pmb\beta^{(s+1)},)$
-\ENDFOR 
-\end{algorithmic}
+In the actual sampling routine, I can simply generate the $\tau_j$'s conditional on a $\lambda$ value and then place these values in a matrix $\Sigma$, which I'll have appropriately hard-coded.
+Now that I have the full conditionals, at a high-level, the Gibbs Sampling routine will progress as. Suppose I have a $\pmb\beta^{(0)}$. Then I sample a $\sigma^{2(0)}$
+\begin{algorithm}
+\setstretch{1.5}
+  \KwResult{Samples from joint posterior $p(\pmb\beta,\sigma^2|\pmb y)$ }
+  \For{s in \# Samples}{
+    $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\\
+    $\lambda \sim IG(0.1,0.1)$\\
+    $\tau_1^2,\ldots,\tau_p^2\overset{iid}{\sim} IG(1,\lambda^2/2)$\\
+    $\pmb\beta^{*}\sim N_p(\pmb\beta^{(s)},\delta\pmb I)$\\
+    $r=\frac{p(\pmb y|\pmb\beta^{*},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})p(\pmb\beta^{*}|\tau^2_1,\ldots,\tau^2_p)}{p(\pmb y|\pmb\beta^{(s)},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})p(\pmb\beta^{(s)}|\tau^2_1,\ldots,\tau^2_p)}$\\
+    $u\sim Unif(0,1)$\\
+    \eIf{$u<r$}{
+        $\pmb\beta^{(s+1)}=\pmb\beta^*$
+    }{
+        $\pmb\beta^{(s+1)}=\pmb\beta^{(s)}$
+    }
+    }   
+  \caption{Combining Gibbs and Metropolis}
+\end{algorithm}
 
-```{r}
-# Sampling from Normal-Inverse-Gamma
-rnorm.invgamma <- function(n, mu, sigma2, a, b) {
-    tau <- 1/rgamma(n, a, b)
-    sample <- rnorm(n, mu, sqrt(1/(sigma2*tau)))
-    return(sample)
+\pagebreak
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part e.}]
+temp
+\end{tcolorbox}
+
+```{r, eval=T,warning=F}
+set.seed(1)
+data("diabetes")
+X <- cbind(rep(1,n),diabetes$x); y <- diabetes$y; n <- nrow(X); p <- ncol(X)
+samples <- 500; a <- b <- 0.1; delta <- 0.1
+beta.s <- solve(t(X)%*%X)%*%t(X)%*%y
+sigma2 <- 0; beta <- rep(0,p)
+for(s in 1:samples){
+  lambda <- 1/rgamma(1,0.1,10)
+  tau2 <- 1/rgamma(p,1,lambda^2/2)
+  sigma2.s <- rgamma(1,n/2+a, 1/(2*b+t(y-X%*%beta.s)%*%(y-X%*%beta.s)))
+  beta.star <- t(rmvnorm(1,mean = beta.s, sigma = delta * diag(p)))
+  logr <- 
+    dmvnorm(y,X%*%beta.star, sigma = sigma2.s*diag(n),log=T)+
+    dmvnorm(t(beta.star),mean=matrix(0,p,1),sigma=diag(tau2), log=T)-
+    dmvnorm(y,X%*%beta.s, sigma = sigma2.s*diag(n),log=T)-
+    dmvnorm(t(beta.s),mean=matrix(0,p,1),sigma=diag(tau2), log=T)
+  if(log(runif(1))<logr){
+    beta.s <- beta.star
+  }else{
+    beta.s <- beta.s
+  }
+  sigma2 <- c(sigma2, sigma2.s)
+  beta <- rbind(beta,t(matrix(beta.s)))
 }
-for(i in 1:n){
-  tau <- 1/rgamma(n, a, b)
-  sigma2.rep <- rnorm(n, mu, sqrt(1/(sigma2*tau)))
-  
-}
+beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
+fit <- glmnet(X[,-1], y)
+df <- cbind(beta.ls,
+colMeans(beta[250:samples,]), coef(fit,0))
+colnames(df) <- c("LS", "Bayes", "glmnet")
+df
 ```
+
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part f.}]
+Implement such algorithm in \textsf{R} and compare your results with estimates obtained using \textbf{glmnet()}. In particular, you should test your results on the diabetes data available from lars, (use the matrix of predictors x).
+\end{tcolorbox}
+
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part g.}]
+Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of the posterior distribution of $\pmb\beta$ and $\sigma^2$, as hyper parameters a and b are changed. Explain clearly the rationale you use to assess sensitivity and provide recommendations for the analysis of the diabetes data.
+\end{tcolorbox}
+
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part h.}]
+Implementation and benchmarking in Julia
+\end{tcolorbox}
+
 
 
 

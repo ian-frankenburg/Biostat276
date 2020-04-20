@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  14 APR 2020 22:04
+This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  18 APR 2020 13:04
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1325,14 +1325,14 @@ Package xcolor Warning: Incompatible color definition on input line 132.
 
 Package xcolor Warning: Incompatible color definition on input line 132.
 
-<Homework1_files/figure-latex/unnamed-chunk-1-1.pdf, id=47, 220.825pt x 215.806
-24pt>
+<Homework1_files/figure-latex/unnamed-chunk-1-1.pdf, id=47, 219.82124pt x 215.8
+0624pt>
 File: Homework1_files/figure-latex/unnamed-chunk-1-1.pdf Graphic file (type pdf
 )
 <use Homework1_files/figure-latex/unnamed-chunk-1-1.pdf>
 Package pdftex.def Info: Homework1_files/figure-latex/unnamed-chunk-1-1.pdf  us
 ed on input line 134.
-(pdftex.def)             Requested size: 220.83118pt x 215.81229pt.
+(pdftex.def)             Requested size: 219.8274pt x 215.81229pt.
 [1
 
 {/usr/local/texlive/2019/texmf-var/fonts/map/pdftex/updmap/pdftex.map} <./Homew
@@ -1372,36 +1372,22 @@ File: Homework1_files/figure-latex/unnamed-chunk-3-1.pdf Graphic file (type pdf
 Package pdftex.def Info: Homework1_files/figure-latex/unnamed-chunk-3-1.pdf  us
 ed on input line 171.
 (pdftex.def)             Requested size: 442.65265pt x 293.09427pt.
-[3 <./Homework1_files/figure-latex/unnamed-chunk-3-1.pdf>] [4]
+[3 <./Homework1_files/figure-latex/unnamed-chunk-3-1.pdf>] [4] [5]
 
-Package xcolor Warning: Incompatible color definition on input line 242.
-
-
-Package xcolor Warning: Incompatible color definition on input line 275.
+Package xcolor Warning: Incompatible color definition on input line 278.
 
 
-Package xcolor Warning: Incompatible color definition on input line 275.
+Package xcolor Warning: Incompatible color definition on input line 331.
 
 
-Underfull \vbox (badness 10000) detected at line 275
- []
-
-
-Package xcolor Warning: Incompatible color definition on input line 275.
-
-[5]
-
-Package xcolor Warning: Incompatible color definition on input line 275.
-
-
-Package xcolor Warning: Incompatible color definition on input line 275.
+Package xcolor Warning: Incompatible color definition on input line 331.
 
 [6] [7] [8] [9]
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 292.
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 292.
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 348.
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 348.
 (./Homework1.aux)
-Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 292.
-Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 292.
+Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 348.
+Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 348.
 Package rerunfilecheck Info: File `Homework1.out' has not changed.
 (rerunfilecheck)             Checksum: 50584763CB7A183ED6A34C739F92A8C5;165.
  ) 
@@ -1432,7 +1418,7 @@ xlive/2019/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2019
 /fonts/type1/public/lm/lmtk10.pfb></usr/local/texlive/2019/texmf-dist/fonts/typ
 e1/public/lm/lmtt10.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/
 amsfonts/symbols/msbm10.pfb>
-Output written on Homework1.pdf (9 pages, 291232 bytes).
+Output written on Homework1.pdf (9 pages, 293938 bytes).
 PDF statistics:
  196 PDF objects out of 1000 (max. 8388607)
  134 compressed objects within 2 object streams

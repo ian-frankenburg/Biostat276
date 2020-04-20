@@ -17,7 +17,9 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.pos = 'H')
 library(latex2exp)
 library(mvtnorm)
+library(invgamma)
 library(lars)
+library(matrixStats)
 library(glmnet)
 ```
 
@@ -70,14 +72,26 @@ $$
 \pmb{Y}|\pmb\beta,\sigma^2 &\sim N(\pmb{X\beta},\sigma^2\pmb{I})\\
 \beta_j|\tau^2_j &\sim N(0,\tau^2_j)\\
 \tau^2_j &\sim \text{Gamma}(1,\frac{\lambda^2}{2})\\
-\lambda &\sim \text{Inverse-Gamma}(a,1/b)\\
+\lambda^2 &\sim \text{Inverse-Gamma}(a,1/b)\\
 \sigma^2 &\sim \text{Inverse-Gamma}(0.1,0.1).
 \end{aligned}
 $$
-To start, I need the full conditional
+I need the full conditionals
 $$
-\{\sigma^2| \pmb{Y},\beta_1,\ldots,\beta_p,\tau_1^2,\ldots,\tau_p^2, \lambda\},
+\begin{aligned}
+\{\beta_1,\ldots,\beta_p| \pmb{Y},\sigma^2,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
+\{\sigma^2| \pmb{Y},\beta_1,\ldots,\beta_p,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
+\{\tau_1^2,\ldots,\tau^2_p| \pmb{Y},\beta_1,\ldots,\beta_p,\sigma^2, \lambda\},\\
+\{\lambda| \pmb{Y},\beta_1,\ldots,\beta_p,\sigma^2,\tau_1^2,\ldots,\tau_p^2\}
+\end{aligned}
 $$
+which are all proportional to
+$$
+p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
+\times p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)
+\times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\lambda)p(\sigma^2)
+$$
+
 so I'll start with the posterior
 $$
 \begin{aligned}
@@ -96,20 +110,38 @@ $$
 Time to show this is inverse-gamma distributed.
 $$
 \begin{aligned}
-&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(a,b)\\
-\propto \ &(\sigma^2)^{-n/2}\exp\big\{-\frac{1}{2\sigma^2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}(\sigma^2)^{a-1}\exp\big\{-\frac{b}{\sigma^2}\big\}\\
-= \ &(\sigma^2)^{-(n/2+a)-1}\exp\big\{-\frac{1}{\sigma^2}(2b+\frac{1}{2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}\\
-= \ & IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})/2)
+&\quad N(\pmb y;\pmb{X\beta},\sigma^2\pmb I)IG(\sigma^2;q,r)\\
+\propto \ &(\sigma^2)^{-n/2}\exp\big\{-\frac{1}{2\sigma^2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}(\sigma^2)^{q-1}\exp\big\{-\frac{r}{\sigma^2}\big\}\\
+= \ &(\sigma^2)^{-(n/2+q)-1}\exp\big\{-\frac{1}{\sigma^2}(r+\frac{1}{2}(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})\big\}\\
+= \ & IG(n/2+q, r+(\pmb{y}-\pmb{X\beta})^\top(\pmb{y}-\pmb{X\beta})/2)|_{q=0.1,r=0.1}
 \end{aligned}
 $$
-As a function of $\pmb\beta$, the conditional is non-standard, but it's proportional to
+As a function of $\pmb\beta$, the conditional is proportional to
 $$
 \begin{aligned}
   &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
   p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
-  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)\cdot\prod_{i=1}^pN(0,\tau_i^2).
+  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)\cdot\prod_{i=1}^pN(0,\tau_i^2)\\
+  =& \quad N(\pmb X\beta,\Sigma)\cdot N(0,\Omega),\text{ where }\Omega=\text{diag}(\tau_1^2,\ldots,\tau_p^2)\\
+  =& \quad N(m,\pmb M)
 \end{aligned}
 $$
+with $m=\pmb M\pmb X^\top\Sigma^{-1}y$ and $\pmb M=(\pmb X^\top\Sigma^{-1}\pmb X+\Omega^{-1})^{-1}$.
+As a function of $\tau_1^2,\ldots,\tau^2_p$, the conditional is non-standard, but it's proportional to
+$$
+\begin{aligned}
+  &p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)p(\tau_1^2,\ldots,\tau_p^2|\lambda)\\
+  =&\quad\prod_{i=1}^pN(0,\tau_i^2)\cdot\prod_{i=1}^p IG(1,\frac{\lambda^2}{2})
+\end{aligned}
+$$
+Finally, as a function of $\lambda$, it's proportional to
+$$
+\begin{aligned}
+  &p(\tau_1^2,\ldots,\tau_p^2|\lambda)p(\lambda)\\
+  =&\quad\prod_{i=1}^pIG(1,\frac{\lambda^2}{2})\cdot IG(0.1,0.1)\\
+\end{aligned}
+$$
+Now I can build an algorithm to iteratively update through these conditional distributions.
 I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution $\pmb{\hat\beta}$.
 
 \begin{algorithm}
@@ -118,16 +150,25 @@ I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution 
   \KwResult{Samples from joint posterior $p(\pmb\beta,\sigma^2|\pmb y)$ }
   \For{s in \# samples}{
     $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\;
-    $\lambda \sim IG(0.1,0.1)$\;
-    $\tau_1^2,\ldots,\tau_p^2\overset{iid}{\sim} IG(1,\lambda^2/2)$\;
-    $\pmb\beta^{*}\sim N_p(\pmb\beta^{(s)},\delta\pmb I)$\;
+    $\pmb\beta^{s}\sim N_p(m,\pmb M)$\;
+    $m^\top=\qquad\qquad \pmb M=$
+    $\tau_1^2,\ldots,\tau_p^2 \sim N(\pmb\tau^{(s)},\delta\pmb I)^2$\;
+    
+    
+    
+    
+    $\lambda^{*}\sim N(\lambda.s,\delta)^2$
+    
+    
+    
+    
     $\log(r)=\log p(\pmb y|\pmb\beta^{*},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})+\log p(\pmb\beta^{*}|\tau^2_1,\ldots,\tau^2_p)$\; 
     $\qquad\qquad\qquad-\log p(\pmb y|\pmb\beta^{(s)},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})-\log p(\pmb\beta^{(s)}|\tau^2_1,\ldots,\tau^2_p)$\;
     $u\sim Unif(0,1)$\;
     \eIf{$\log(u)<\log(r)$}{
-        $\pmb\beta^{(s+1)}=\pmb\beta^*$
+        $\pmb\tau^{(s+1)}=\pmb\beta^*$
     }{
-        $\pmb\beta^{(s+1)}=\pmb\beta^{(s)}$
+        $\pmb\tau^{(s+1)}=\pmb\beta^{(s)}$
     }
     }   
   \caption{Gibbs and Metropolis}
@@ -141,35 +182,90 @@ temp
 ```{r, eval=F,warning=F}
 set.seed(1)
 data("diabetes")
-X <- cbind(rep(1,n),diabetes$x); y <- diabetes$y; n <- nrow(X); p <- ncol(X)
-samples <- 500; a <- b <- 0.1; delta <- 0.1
-beta.s <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2 <- 0; beta <- rep(0,p)
-for(s in 1:samples){
-  lambda <- 1/rgamma(1,0.1,10)
-  tau2 <- 1/rgamma(p,1,lambda^2/2)
-  sigma2.s <- rgamma(1,n/2+a, 1/(2*b+t(y-X%*%beta.s)%*%(y-X%*%beta.s)))
-  beta.star <- t(rmvnorm(1,mean = beta.s, sigma = delta * diag(p)))
-  logr <- 
-    dmvnorm(y,X%*%beta.star, sigma = sigma2.s*diag(n),log=T)+
-    dmvnorm(t(beta.star),mean=matrix(0,p,1),sigma=diag(tau2), log=T)-
-    dmvnorm(y,X%*%beta.s, sigma = sigma2.s*diag(n),log=T)-
-    dmvnorm(t(beta.s),mean=matrix(0,p,1),sigma=diag(tau2), log=T)
-  if(log(runif(1))<logr){
-    beta.s <- beta.star
-  }else{
-    beta.s <- beta.s
+X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X);p <- ncol(X)
+# X <- cbind(rep(1,n),X)
+samples <- 10000;
+lambda2 <- 0.05
+tau2 <- rep(10,p)
+beta <- solve(t(X)%*%X)%*%t(X)%*%y
+sigma2.keep <- lambda2.keep <-rep(0,samples)
+beta.keep <-tau2.keep <- matrix(NA,nrow=p,ncol=samples)
+sigma2 <-var(y)
+sigma2.keep[1] <- sigma2
+beta.keep[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
+lambda2.keep[1] <- lambda2
+tau2.keep[,1] <- rep(1,p)
+hey <- 1
+lambda2 <- 1
+for(s in 2:samples){
+  #lambda2.p <- rgamma(1,1,10)
+  lambda2.p <- gamma(1,lambda2,.5)
+  logr <- sum(dgamma(tau2,1,lambda2.p/2,log=T))+
+    dgamma(lambda2.p,1,1,log=T)-
+    sum(dgamma(tau2,1,lambda2/2,log=T))-
+    dgamma(lambda2,1,1,log=T)-
+    dnorm(lambda2.p,lambda2,0.05)+
+    dnorm(lambda2,lambda2.p, 0.05,log = T)
+  if(log(runif(1))<logr){lambda2 <- lambda2.p}
+  for(i in 1:p){
+    tau2i.p <- runif(1,min=tau2[i]-tau2[i]/2,max=tau2[i]+tau2[i]/2)
+    while(tau2i.p<=0){
+      tau2i.p <- runif(1,min=tau2[i]-tau2[i]/10,max=tau2[i]+tau2[i]/10)
+    }
+    logr <- dnorm(beta[i],0,tau2i.p,log=T)+
+      dgamma(tau2i.p,1,lambda2/2,log=T)-
+      dnorm(beta[i],0,tau2[i],log=T)-
+      dgamma(tau2[i],1,lambda2/2,log=T)-
+      dunif(tau2i.p,min=tau2[i]-1, max=tau2[i]+1,log = T)+
+      dunif(tau2[i],min=tau2i.p-1, max=tau2i.p+1,log = T)
+    if(log(runif(1))<logr){tau2[i] <- tau2i.p}else{hey <- hey+1}
   }
-  sigma2 <- c(sigma2, sigma2.s)
-  beta <- rbind(beta,t(matrix(beta.s)))
+  # sigma2.p <- runif(1, min=sigma2-0.1,max=sigma2+0.1)
+  # while(sigma2.p<=0){
+  #   sigma2.p <-runif(1, min=sigma2-.05,max=sigma2+.05)
+  # }
+  # logr <- dmvnorm(y,X%*%beta,sigma2.p*diag(n), log=T)+
+  #   dgamma(1/sigma2.p,10,1/10,log=T)-
+  #   dmvnorm(y,X%*%beta,sigma2*diag(n), log=T)-
+  #   dgamma(1/sigma2,0.1,1/10,log=T)
+  # if(log(runif(1))<logr){sigma2 <- sigma2.p}
+  sigma2 <- rinvgamma(1,shape=n/2+0.1,scale=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
+  M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
+  m <- M%*%t(X)%*%y/sigma2
+  beta <- t(rmvnorm(n=1,mean=m,sigma=M))
+  sigma2.keep[s] <- sigma2
+  beta.keep[,s] <- beta
+  tau2.keep[,s] <- tau2
+  lambda2.keep[s] <- lambda2
 }
+
 beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
 fit <- glmnet(X[,-1], y)
-df <- cbind(beta.ls,
-colMeans(beta[250:samples,]), coef(fit,0))
-colnames(df) <- c("LS", "Bayes", "glmnet")
+df <- cbind(beta.ls,rowMeans(beta.keep[,floor(samples/4):samples]), coef(fit,s=0))
+colnames(df) <- c("Least Square", "Bayes", "glmnet")
 df
+plot(lambda2.keep[1:samples], type="l")
+beta.keep <- t(beta.keep)
+tau2.keep <- t(tau2.keep)
+tau2.keep <- scale(tau2.keep[1:samples,], center = FALSE, scale =colSums(tau2.keep[1:samples,]))
+plot(sigma2.keep[1:samples],type="l")
+plot(tau2.keep[,1],type="l")
+plot(tau2.keep[,2],type="l")
+plot(tau2.keep[,3],type="l")
+plot(tau2.keep[,4],type="l")
+plot(tau2.keep[,5],type="l")
+plot(tau2.keep[,6],type="l")
+plot(tau2.keep[,7],type="l")
+plot(beta.keep[,1],type="l")
+plot(beta.keep[,2],type="l")
+plot(beta.keep[,3],type="l")
+plot(beta.keep[,4],type="l")
+plot(beta.keep[,5],type="l")
+plot(beta.keep[,6],type="l")
+plot(beta.keep[,7],type="l")
+
 ```
+
 
 \newpage
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part f.}]
@@ -185,6 +281,9 @@ Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of th
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part h.}]
 Implementation and benchmarking in Julia
 \end{tcolorbox}
+
+
+
 
 
 

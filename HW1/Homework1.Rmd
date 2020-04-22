@@ -20,6 +20,7 @@ library(mvtnorm)
 library(invgamma)
 library(lars)
 library(matrixStats)
+library(statmod)
 library(glmnet)
 ```
 
@@ -184,9 +185,9 @@ set.seed(1)
 data("diabetes")
 X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X);p <- ncol(X)
 # X <- cbind(rep(1,n),X)
-samples <- 10000;
-lambda2 <- 0.05
-tau2 <- rep(10,p)
+samples <- 5000;
+lambda2 <- 0.1
+tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
 sigma2.keep <- lambda2.keep <-rep(0,samples)
 beta.keep <-tau2.keep <- matrix(NA,nrow=p,ncol=samples)
@@ -194,42 +195,33 @@ sigma2 <-var(y)
 sigma2.keep[1] <- sigma2
 beta.keep[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
 lambda2.keep[1] <- lambda2
-tau2.keep[,1] <- rep(1,p)
-hey <- 1
-lambda2 <- 1
+tau2.keep[,1] <- tau2
+s <- 2
+lambdas <- c(exp(-20),exp(-10),exp(-9),exp(-7),exp(-6),exp(-5),exp(-4),exp(-3),exp(-2),exp(-1))
+post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
+index <- 1
+for(l in lambdas){
 for(s in 2:samples){
-  #lambda2.p <- rgamma(1,1,10)
-  lambda2.p <- gamma(1,lambda2,.5)
-  logr <- sum(dgamma(tau2,1,lambda2.p/2,log=T))+
-    dgamma(lambda2.p,1,1,log=T)-
-    sum(dgamma(tau2,1,lambda2/2,log=T))-
-    dgamma(lambda2,1,1,log=T)-
-    dnorm(lambda2.p,lambda2,0.05)+
-    dnorm(lambda2,lambda2.p, 0.05,log = T)
-  if(log(runif(1))<logr){lambda2 <- lambda2.p}
+  # lambda2.p <- exp(log(lambda2)+rnorm(1,0,.5))
+  # logr <- sum(dgamma(tau2,1,lambda2.p/2,log=T))+
+  #   dgamma(lambda2.p,1,1,log=T)-
+  #   sum(dgamma(tau2,1,lambda2/2,log=T))-
+  #   dgamma(lambda2,1,1,log=T)+
+  #   log(lambda2.p)-log(lambda2)
+  # if(log(runif(1))<logr){lambda2 <- lambda2.p}
+  lambda2 <- l
   for(i in 1:p){
-    tau2i.p <- runif(1,min=tau2[i]-tau2[i]/2,max=tau2[i]+tau2[i]/2)
-    while(tau2i.p<=0){
-      tau2i.p <- runif(1,min=tau2[i]-tau2[i]/10,max=tau2[i]+tau2[i]/10)
-    }
+    tau2i.p <- exp(log(tau2[i])+rnorm(1,0,0.1))
     logr <- dnorm(beta[i],0,tau2i.p,log=T)+
       dgamma(tau2i.p,1,lambda2/2,log=T)-
       dnorm(beta[i],0,tau2[i],log=T)-
-      dgamma(tau2[i],1,lambda2/2,log=T)-
-      dunif(tau2i.p,min=tau2[i]-1, max=tau2[i]+1,log = T)+
-      dunif(tau2[i],min=tau2i.p-1, max=tau2i.p+1,log = T)
-    if(log(runif(1))<logr){tau2[i] <- tau2i.p}else{hey <- hey+1}
+      dgamma(tau2[i],1,lambda2/2,log=T)+
+      log(tau2i.p)-log(tau2[i])
+    if(log(runif(1))<logr){tau2[i] <- tau2i.p}
   }
-  # sigma2.p <- runif(1, min=sigma2-0.1,max=sigma2+0.1)
-  # while(sigma2.p<=0){
-  #   sigma2.p <-runif(1, min=sigma2-.05,max=sigma2+.05)
-  # }
-  # logr <- dmvnorm(y,X%*%beta,sigma2.p*diag(n), log=T)+
-  #   dgamma(1/sigma2.p,10,1/10,log=T)-
-  #   dmvnorm(y,X%*%beta,sigma2*diag(n), log=T)-
-  #   dgamma(1/sigma2,0.1,1/10,log=T)
-  # if(log(runif(1))<logr){sigma2 <- sigma2.p}
-  sigma2 <- rinvgamma(1,shape=n/2+0.1,scale=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
+  # tau2 <- 1/rinvgauss(n = length(beta), mean = lambda2/abs(beta), 
+  #                       shape = lambda2)
+  sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
   M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
   m <- M%*%t(X)%*%y/sigma2
   beta <- t(rmvnorm(n=1,mean=m,sigma=M))
@@ -238,32 +230,46 @@ for(s in 2:samples){
   tau2.keep[,s] <- tau2
   lambda2.keep[s] <- lambda2
 }
+post.means[,index] <- matrix(rowMeans(beta.keep[,floor(samples/4):samples]),nrow = p)
+index <- index +1
+}
+fit <- glmnet(X, y)
+glmnetCoef <- coef(fit,s=1)
+df <- cbind(beta.ls,rowMeans(beta.keep[,floor(samples/4):samples]),glmnetCoef[-1,])
+plot(fit, xvar="lambda")
+plot(log(lambdas),post.means[1,],ylab="Coefficients",xlab="log lambdas",ylim=c(-300,300))
+lines(log(lambdas),post.means[1,])
+for(j in 2:10){
+points(log(lambdas),post.means[j,],ylab="Coefficients",xlab="log lambdas", col=j)
+lines(log(lambdas),post.means[j,], col=j)
+}
 
-beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
-fit <- glmnet(X[,-1], y)
-df <- cbind(beta.ls,rowMeans(beta.keep[,floor(samples/4):samples]), coef(fit,s=0))
-colnames(df) <- c("Least Square", "Bayes", "glmnet")
-df
-plot(lambda2.keep[1:samples], type="l")
+
+
+# beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
+# fit <- glmnet(X, y)
+# glmnetCoef <- coef(fit,s=1)
+# df <- cbind(beta.ls,rowMeans(beta.keep[,floor(samples/4):samples]),glmnetCoef[-1,])
+# colnames(df) <- c("Least Square", "Bayes", "Glmnet")
+# df
+plot(lambda2.keep[1000:samples], type="l")
 beta.keep <- t(beta.keep)
 tau2.keep <- t(tau2.keep)
-tau2.keep <- scale(tau2.keep[1:samples,], center = FALSE, scale =colSums(tau2.keep[1:samples,]))
-plot(sigma2.keep[1:samples],type="l")
-plot(tau2.keep[,1],type="l")
-plot(tau2.keep[,2],type="l")
-plot(tau2.keep[,3],type="l")
-plot(tau2.keep[,4],type="l")
-plot(tau2.keep[,5],type="l")
-plot(tau2.keep[,6],type="l")
-plot(tau2.keep[,7],type="l")
-plot(beta.keep[,1],type="l")
-plot(beta.keep[,2],type="l")
-plot(beta.keep[,3],type="l")
-plot(beta.keep[,4],type="l")
-plot(beta.keep[,5],type="l")
-plot(beta.keep[,6],type="l")
-plot(beta.keep[,7],type="l")
-
+plot(sigma2.keep[1000:samples],type="l")
+plot((tau2.keep[,1]),type="l")
+plot((tau2.keep[,2]),type="l")
+plot((tau2.keep[,3]),type="l")
+plot((tau2.keep[,4]),type="l")
+plot((tau2.keep[,5]),type="l")
+plot((tau2.keep[,6]),type="l")
+plot((tau2.keep[,7]),type="l")
+# plot(beta.keep[,1],type="l")
+# plot(beta.keep[,2],type="l")
+# plot(beta.keep[,3],type="l")
+# plot(beta.keep[,4],type="l")
+# plot(beta.keep[,5],type="l")
+# plot(beta.keep[,6],type="l")
+# plot(beta.keep[,7],type="l")
 ```
 
 

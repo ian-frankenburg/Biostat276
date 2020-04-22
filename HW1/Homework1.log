@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  18 APR 2020 13:04
+This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  21 APR 2020 21:34
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1377,26 +1377,64 @@ ed on input line 171.
 Package xcolor Warning: Incompatible color definition on input line 278.
 
 
-Package xcolor Warning: Incompatible color definition on input line 331.
+Package xcolor Warning: Incompatible color definition on input line 357.
 
 
-Package xcolor Warning: Incompatible color definition on input line 331.
+Package xcolor Warning: Incompatible color definition on input line 357.
 
-[6] [7] [8] [9]
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 348.
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 348.
+
+Underfull \vbox (badness 10000) detected at line 357
+ []
+
+
+Package xcolor Warning: Incompatible color definition on input line 357.
+
+[6]
+
+Package xcolor Warning: Incompatible color definition on input line 357.
+
+
+Package xcolor Warning: Incompatible color definition on input line 357.
+
+[7]
+
+Package xcolor Warning: Incompatible color definition on input line 364.
+
+
+Package xcolor Warning: Incompatible color definition on input line 452.
+
+
+Package xcolor Warning: Incompatible color definition on input line 452.
+
+
+Underfull \vbox (badness 10000) detected at line 452
+ []
+
+
+Package xcolor Warning: Incompatible color definition on input line 452.
+
+[8]
+
+Package xcolor Warning: Incompatible color definition on input line 452.
+
+
+Package xcolor Warning: Incompatible color definition on input line 452.
+
+[9] [10]
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 459.
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 459.
 (./Homework1.aux)
-Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 348.
-Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 348.
+Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 459.
+Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 459.
 Package rerunfilecheck Info: File `Homework1.out' has not changed.
 (rerunfilecheck)             Checksum: 50584763CB7A183ED6A34C739F92A8C5;165.
  ) 
 Here is how much of TeX's memory you used:
- 39789 strings out of 492616
- 765983 string characters out of 6129482
- 961624 words of memory out of 5000000
- 43101 multiletter control sequences out of 15000+600000
- 612432 words of font info for 106 fonts, out of 8000000 for 9000
+ 39792 strings out of 492616
+ 766024 string characters out of 6129482
+ 966020 words of memory out of 5000000
+ 43102 multiletter control sequences out of 15000+600000
+ 612751 words of font info for 107 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  63i,17n,101p,817b,480s stack positions out of 5000i,500n,10000p,200000b,80000s
 {/usr/local/texlive/2019/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/usr/local/
@@ -1417,11 +1455,12 @@ xlive/2019/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2019
 /texmf-dist/fonts/type1/public/lm/lmsy7.pfb></usr/local/texlive/2019/texmf-dist
 /fonts/type1/public/lm/lmtk10.pfb></usr/local/texlive/2019/texmf-dist/fonts/typ
 e1/public/lm/lmtt10.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/
-amsfonts/symbols/msbm10.pfb>
-Output written on Homework1.pdf (9 pages, 293938 bytes).
+lm/lmtti10.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/
+symbols/msbm10.pfb>
+Output written on Homework1.pdf (10 pages, 318177 bytes).
 PDF statistics:
- 196 PDF objects out of 1000 (max. 8388607)
- 134 compressed objects within 2 object streams
- 14 named destinations out of 1000 (max. 500000)
+ 204 PDF objects out of 1000 (max. 8388607)
+ 140 compressed objects within 2 object streams
+ 15 named destinations out of 1000 (max. 500000)
  14516 words of extra memory for PDF output out of 17280 (max. 10000000)
 

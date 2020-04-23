@@ -180,35 +180,27 @@ I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution 
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part f.}]
 Implement such algorithm in \textsf{R} and compare your results with estimates obtained using \textbf{glmnet()}. In particular, you should test your results on the diabetes data available from lars, (use the matrix of predictors x).
 \end{tcolorbox}
-
-
-
 ```{r, eval=F,warning=F}
+set.seed(1)
+data("diabetes")
 loglambda.target <- function(lambda, a, b, tau2){
   (-a - 1)*log(lambda) - (lambda^2/2 * sum(tau2)) - 1/(b*lambda)
 }
 logtau2j.target <- function(tau2j, lambda, betaj){
   -log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j)
 }
-
-set.seed(1)
-data("diabetes")
-X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X)
-X <- cbind(rep(1,n),X)
-p <- ncol(X)
+X <- cbind(rep(1,n),cbind(diabetes$x)); y <- diabetes$y; n <- nrow(X); p <- ncol(X)
 samples <- 50000;
-#lambda <- 1e-10
 lambda <- 1
 tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2.keep <- lambda.keep <-rep(0,samples)
-beta.keep <-tau2.keep<- matrix(NA,nrow=p,ncol=samples)
-sigma2 <-var(y)
-sigma2.keep[1] <- sigma2
-beta.keep[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.keep[1] <- lambda
-tau2.keep[,1] <- tau2
-s <- 2
+sigma2.chain <- lambda.chain <- rep(0,samples)
+beta.chain <- tau2.chain <- matrix(NA,nrow=p,ncol=samples)
+sigma2 <- var(y)
+sigma2.chain[1] <- sigma2
+beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
+lambda.chain[1] <- lambda
+tau2.chain[,1] <- tau2
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
 index <- 1
 b<-1
@@ -216,7 +208,7 @@ for(s in 2:samples){
   lambda.p <- exp(log(lambda)+rnorm(1,0,lambda))
   logr <- loglambda.target(lambda.p,1,b,tau2)-loglambda.target(lambda,1,b,tau2)+log(lambda.p)-log(lambda)
   if(log(runif(1))<logr){lambda <- lambda.p}
-  lambda.keep[s] <- lambda
+  lambda.chain[s] <- lambda
   for(j in 1:length(tau2)){
     tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
     logr <-
@@ -225,18 +217,15 @@ for(s in 2:samples){
       log(tau2j.p)-log(tau2[j])
     if(log(runif(1))<logr){tau2[j] <- tau2j.p}
   }
-  # tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta),
-  #                        shape = lambda^2)
+  tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta),
+                         shape = lambda^2)
   sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
   M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
   m <- M%*%t(X)%*%y/sigma2
   beta <- t(rmvnorm(n=1,mean=m,sigma=M))
-  sigma2.keep[s] <- sigma2
-  beta.keep[,s] <- beta
-  tau2.keep[,s] <- tau2
-}
-post.means[,index] <- matrix(rowMeans(beta.keep[,floor(samples/4):samples]),nrow = p)
-index <- index +1
+  sigma2.chain[s] <- sigma2
+  beta.chain[,s] <- beta
+  tau2.chain[,s] <- tau2
 }
 fit <- glmnet(X, y)
 glmnetCoef <- coef(fit,s=1)
@@ -244,24 +233,23 @@ plot(fit, xvar="lambda")
 
 fit <- glmnet(X, y)
 glmnetCoef <- coef(fit,s=1)
-# df <- cbind(beta.ls,colMeans(beta.keep[floor(samples/4):samples,]),glmnetCoef[-1,])
+# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
 # colnames(df) <- c("Least Square", "Bayes", "Glmnet")
 # df
-plot(log(lambda.keep[1:samples]), type="l")
+plot(log(lambda.chain[1:samples]), type="l")
 beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
 cbind(beta.ls,betaChain)
-beta.keep <- t(beta.keep)
-tau2.keep <- t(tau2.keep)
-plot(sigma2.keep[1:samples],type="l")
-plot(log(tau2.keep[,1]),type="l")
-plot((tau2.keep[,2]),type="l")
-plot((tau2.keep[,3]),type="l")
-plot((tau2.keep[,4]),type="l")
-plot((tau2.keep[,5]),type="l")
-plot((tau2.keep[,6]),type="l")
-plot((tau2.keep[,7]),type="l")
+beta.chain <- t(beta.chain)
+tau2.chain <- t(tau2.chain)
+plot(sigma2.chain[1:samples],type="l")
+plot(log(tau2.chain[,1]),type="l")
+plot(log(tau2.chain[,2]),type="l")
+plot((tau2.chain[,3]),type="l")
+plot((tau2.chain[,4]),type="l")
+plot((tau2.chain[,5]),type="l")
+plot((tau2.chain[,6]),type="l")
+plot((tau2.chain[,7]),type="l")
 ```
-
 \newpage
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part g.}]
 Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of the posterior distribution of $\pmb\beta$ and $\sigma^2$, as hyper parameters a and b are changed. Explain clearly the rationale you use to assess sensitivity and provide recommendations for the analysis of the diabetes data.
@@ -280,53 +268,47 @@ X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X)
 X <- cbind(rep(1,n),X)
 p <- ncol(X)
 samples <- 5000;
-#lambda <- 1e-10
 lambda <- 1
 tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2.keep <- lambda.keep <-rep(0,samples)
-beta.keep <-tau2.keep<- matrix(NA,nrow=p,ncol=samples)
+sigma2.chain <- lambda.chain <-rep(0,samples)
+beta.chain <-tau2.chain<- matrix(NA,nrow=p,ncol=samples)
 sigma2 <-var(y)
-sigma2.keep[1] <- sigma2
-beta.keep[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.keep[1] <- lambda
-tau2.keep[,1] <- tau2
+sigma2.chain[1] <- sigma2
+beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
+lambda.chain[1] <- lambda
+tau2.chain[,1] <- tau2
 s <- 2
 lambdas <- seq(from=-12, to = -1, length.out = 12)
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
 index <- 1
 for(l in lambdas){
 for(s in 2:samples){
-  # lambda.p <- exp(log(lambda)+rnorm(1,0,lambda))
-  # logr <- loglambda.target(lambda.p,1,b,tau2)-loglambda.target(lambda,1,b,tau2)+log(lambda.p)-log(lambda)
-  # if(log(runif(1))<logr){lambda <- lambda.p}
-  # lambda.keep[s] <- lambda
   lambda <- exp(l)
-  j<-1
-  for(j in 1:length(tau2)){
-    tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
-    logr <-
-      logtau2j.target(tau2j.p, lambda, beta[j]) -
-      logtau2j.target(tau2[j], lambda, beta[j]) +
-      log(tau2j.p)-log(tau2[j])
-    if(log(runif(1))<logr){tau2[j] <- tau2j.p}
-  }
-  # tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta), shape = lambda^2)
+  # for(j in 1:length(tau2)){
+  #   tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
+  #   logr <-
+  #     logtau2j.target(tau2j.p, lambda, beta[j]) -
+  #     logtau2j.target(tau2[j], lambda, beta[j]) +
+  #     log(tau2j.p)-log(tau2[j])
+  #   if(log(runif(1))<logr){tau2[j] <- tau2j.p}
+  # }
+  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
   sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
   M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
   m <- M%*%t(X)%*%y/sigma2
   beta <- t(rmvnorm(n=1,mean=m,sigma=M))
-  sigma2.keep[s] <- sigma2
-  beta.keep[,s] <- beta
-  tau2.keep[,s] <- tau2
+  sigma2.chain[s] <- sigma2
+  beta.chain[,s] <- beta
+  tau2.chain[,s] <- tau2
 }
-post.means[,index] <- matrix(rowMeans(beta.keep[,floor(samples/4):samples]),nrow = p)
+post.means[,index] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
 index <- index +1
 }
 fit <- glmnet(X, y)
 glmnetCoef <- coef(fit,s=1)
 plot(fit, xvar="lambda")
-betaChain <- colMeans(beta.keep[,1:samples])
+betaChain <- colMeans(beta.chain[,1:samples])
 
 plot(lambdas,post.means[2,],ylab="Coefficients",xlab="log lambdas",ylim=c(min(post.means),max(post.means)),type="l")
 lines(lambdas,post.means[2,])
@@ -338,7 +320,7 @@ lines(lambdas,post.means[j,], col=j)
 fit <- glmnet(X, y)
 plot(fit,xvar = "lambda")
 glmnetCoef <- coef(fit,s=1)
-# df <- cbind(beta.ls,colMeans(beta.keep[floor(samples/4):samples,]),glmnetCoef[-1,])
+# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
 # colnames(df) <- c("Least Square", "Bayes", "Glmnet")
 # df
 beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
@@ -346,19 +328,14 @@ sajd <- glmnetCoef
 cbind(beta.ls,post.means,coef(fit,s=1)[-2,])
 ```
 
+
 \newpage
-\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part h.}]
-Implementation and benchmarking in Julia
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part g.}]
+Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of the posterior distribution of $\pmb\beta$ and $\sigma^2$, as hyper parameters a and b are changed. Explain clearly the rationale you use to assess sensitivity and provide recommendations for the analysis of the diabetes data.
 \end{tcolorbox}
 
 ```{r, eval=F,warning=F}
-loglambda.target <- function(lambda, a, b, tau2){
-  (-a - 1)*log(lambda) - (lambda^2/2 * sum(tau2)) - 1/(b*lambda)
-}
-logtau2j.target <- function(tau2j, lambda, betaj){
-  -log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j)
-}
-bs <- c(seq(from=0.0001,to=1.5,length.out = 10),seq(from=1,to=20,length.out = 10))
+bs <- c(seq(from=0.001,to=1,length.out = 10),seq(from=1.5,to=20,length.out = 10))
 set.seed(1)
 data("diabetes")
 X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X)
@@ -370,57 +347,71 @@ samples <- 5000;
 lambda <- 1
 tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2.keep <- lambda.keep <-rep(0,samples)
-beta.keep <-tau2.keep<- matrix(NA,nrow=p,ncol=samples)
+sigma2.chain <- lambda.chain <-rep(0,samples)
+beta.chain <-tau2.chain<- matrix(NA,nrow=p,ncol=samples)
 sigma2 <-var(y)
-sigma2.keep[1] <- sigma2
-beta.keep[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.keep[1] <- lambda
-tau2.keep[,1] <- tau2
+sigma2.chain[1] <- sigma2
+beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
+lambda.chain[1] <- lambda
+tau2.chain[,1] <- tau2
 s <- 2
-lambdas <- seq(from=-12, to = -2, length.out = 12)
+lambdas <- seq(from=-12, to = -2, length.out = 6)
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
 index <- 1
 bindex <- 1
 for(b in bs){
 for(s in 2:samples){
-  lambda.p <- exp(log(lambda)+rnorm(1,0,lambda))
-  logr <- loglambda.target(lambda.p,1,b,tau2)-loglambda.target(lambda,1,b,tau2)+log(lambda.p)-log(lambda)
-  if(log(runif(1))<logr){lambda <- lambda.p}
+  lambda.p <- exp(log(lambda)+rnorm(1,0,1))
+  # logr <- loglambdaTarget(lambda=lambda.p,tau2=tau2,a=1,b=b)-loglambdaTarget(lambda=lambda,tau2=tau2,a=1,b=b)+log(lambda.p)-log(lambda)
+  # if(log(runif(1))<logr){lambda <- lambda.p}
+  lambda <- lambdaDraw(proposed=lambda.p, current=lambda,tau2=tau2,a=1,b=b)
   lambda.keep[s] <- lambda
-  for(j in 1:length(tau2)){
-    tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
-    logr <-
-      logtau2j.target(tau2j.p, lambda, beta[j]) -
-      logtau2j.target(tau2[j], lambda, beta[j]) +
-      log(tau2j.p)-log(tau2[j])
-    if(log(runif(1))<logr){tau2[j] <- tau2j.p}
-  }
+  # for(j in 1:length(tau2)){
+  #   tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
+  #   logr <-
+  #     logtau2jTarget(tau2j.p, lambda, beta[j]) -
+  #     logtau2jTarget(tau2[j], lambda, beta[j]) +
+  #     log(tau2j.p)-log(tau2[j])
+  #   if(log(runif(1))<logr){tau2[j] <- tau2j.p}
+  # }
+  tau2 <- tau2Draw(current=tau2,beta=beta, lambda=lambda)
   # tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta),
   #                        shape = lambda^2)
   sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
   M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
   m <- M%*%t(X)%*%y/sigma2
   beta <- t(rmvnorm(n=1,mean=m,sigma=M))
-  sigma2.keep[s] <- sigma2
-  beta.keep[,s] <- beta
-  tau2.keep[,s] <- tau2
+  sigma2.chain[s] <- sigma2
+  beta.chain[,s] <- beta
+  tau2.chain[,s] <- tau2
 }
-post.means[,index] <- matrix(rowMeans(beta.keep[,floor(samples/4):samples]),nrow = p)
+post.means[,index] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
 post.meansindex <- index +1
-betasB[,bindex] <- rowMeans(beta.keep[,1000:samples])
+betasB[,bindex] <- rowMeans(beta.chain[,1000:samples])
 bindex <- bindex+1
 }
 
 
-# df <- cbind(beta.ls,colMeans(beta.keep[floor(samples/4):samples,]),glmnetCoef[-1,])
+# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
 # colnames(df) <- c("Least Square", "Bayes", "Glmnet")
 # df
-plot(bs,betasB[2,],ylim = c(min(betasB),max(betasB)),type="l")
+plot(bs,betasB[2,],ylim = c(min(betasB),max(betasB)),type="l", main="Effect of b", ylab="Coefficients",xlab="b's")
 for(j in 3:length(bs)){
   points(bs,betasB[j,],ylim = c(min(betasB[j,]),max(betasB[j,])), type="l", col=j)
 }
 ```
+
+```{r}
+library(Rcpp)
+library(rbenchmark)
+loglambdaTarget(lambda = 1,tau2 = c(1,2,3),a=1,b=1)
+loglambda.target(lambda = 1,tau2 = c(1,2,3),a=1,b=1)
+logtau2jTarget(1,1,1)
+logtau2j.target(1,1,1)
+tau2j <- betaj <- lambda <- 2
+(-log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j))
+```
+
 
 
 

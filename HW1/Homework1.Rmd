@@ -15,6 +15,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.pos = 'H')
+library(kableExtra)
 library(latex2exp)
 library(mvtnorm)
 library(invgamma)
@@ -22,6 +23,10 @@ library(lars)
 library(matrixStats)
 library(statmod)
 library(glmnet)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(Rcpp)
 ```
 
 # Bayesian Adaptive Lasso
@@ -70,25 +75,25 @@ Considering the hyper prior in \textbf{c.}, describe a Markov Chain Monte Carlo 
 I will implement a joint Gibbs and Metropolis sampler. The model is
 $$
 \begin{aligned}
-\pmb{Y}|\pmb\beta,\sigma^2 &\sim N(\pmb{X\beta},\sigma^2\pmb{I})\\
+\pmb y|\pmb\beta,\sigma^2 &\sim N(\pmb{X\beta},\sigma^2\pmb{I})\\
 \beta_j|\tau^2_j &\sim N(0,\tau^2_j)\\
-\tau^2_j &\sim \text{Gamma}(1,\frac{\lambda^2}{2})\\
-\lambda^2 &\sim \text{Inverse-Gamma}(a,1/b)\\
+\tau^2_j &\sim \text{Inverse-Gamma}(1,\frac{\lambda^2}{2})\\
+\lambda &\sim \text{Inverse-Gamma}(a,1/b)\\
 \sigma^2 &\sim \text{Inverse-Gamma}(0.1,0.1).
 \end{aligned}
 $$
 I need the full conditionals
 $$
 \begin{aligned}
-\{\beta_1,\ldots,\beta_p| \pmb{Y},\sigma^2,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
-\{\sigma^2| \pmb{Y},\beta_1,\ldots,\beta_p,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
-\{\tau_1^2,\ldots,\tau^2_p| \pmb{Y},\beta_1,\ldots,\beta_p,\sigma^2, \lambda\},\\
-\{\lambda| \pmb{Y},\beta_1,\ldots,\beta_p,\sigma^2,\tau_1^2,\ldots,\tau_p^2\}
+\{\beta_1,\ldots,\beta_p| \pmb y,\sigma^2,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
+\{\sigma^2| \pmb y,\beta_1,\ldots,\beta_p,\tau_1^2,\ldots,\tau_p^2, \lambda\},\\
+\{\tau_1^2,\ldots,\tau^2_p| \pmb y,\beta_1,\ldots,\beta_p,\sigma^2, \lambda\},\\
+\{\lambda| \pmb y,\beta_1,\ldots,\beta_p,\sigma^2,\tau_1^2,\ldots,\tau_p^2\}
 \end{aligned}
 $$
 which are all proportional to
 $$
-p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
+p(\pmb y|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
 \times p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)
 \times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\lambda)p(\sigma^2)
 $$
@@ -96,7 +101,7 @@ $$
 so I'll start with the posterior
 $$
 \begin{aligned}
-p(\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda|\pmb{Y})&\propto p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)\\
+p(\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda|\pmb y)&\propto p(\pmb y|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)\\
 &\qquad \times p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
 &\qquad \times p(\tau^2_1,\ldots,\tau^2_p|\lambda)p(\lambda)p(\sigma^2).
 \end{aligned}
@@ -104,8 +109,8 @@ $$
 As a function of just $\sigma^2$, this is proportional to
 $$
 \begin{aligned}
-  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)p(\sigma^2)\\
-  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(a,b).
+  &p(\pmb{y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)p(\sigma^2)\\
+  =&\quad N(\pmb{X\beta},\sigma^2\pmb I)IG(0.1,0.1).
 \end{aligned}
 $$
 Time to show this is inverse-gamma distributed.
@@ -120,213 +125,159 @@ $$
 As a function of $\pmb\beta$, the conditional is proportional to
 $$
 \begin{aligned}
-  &p(\pmb{Y}|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
+  &p(\pmb y|\beta_1,\ldots,\beta_p,\tau^2_1,\ldots,\tau^2_p,\sigma^2,\lambda)
   p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)\\
   =&\quad N(\pmb{X\beta},\sigma^2\pmb I)\cdot\prod_{i=1}^pN(0,\tau_i^2)\\
-  =& \quad N(\pmb X\beta,\Sigma)\cdot N(0,\Omega),\text{ where }\Omega=\text{diag}(\tau_1^2,\ldots,\tau_p^2)\\
-  =& \quad N(m,\pmb M)
+  =& \quad N(\pmb{X\beta},\pmb\Sigma)\cdot N(0,\pmb\Omega),\text{ where }\Omega=\text{diag}(\tau_1^2,\ldots,\tau_p^2)\\
+  =& \quad N(\pmb m,\pmb M)
 \end{aligned}
 $$
-with $m=\pmb M\pmb X^\top\Sigma^{-1}y$ and $\pmb M=(\pmb X^\top\Sigma^{-1}\pmb X+\Omega^{-1})^{-1}$.
-As a function of $\tau_1^2,\ldots,\tau^2_p$, the conditional is non-standard, but it's proportional to
+because the posterior is determined by the quadratic form
+$$
+\begin{aligned}
+(\pmb y-\pmb{X\beta})^\top\Sigma^{-1}(\pmb y-\pmb{X\beta})+\pmb\beta^\top\Omega^{-1}\pmb\beta=(\pmb\beta-\pmb m)^\top\pmb M^{-1}(\pmb\beta-\pmb m).
+\end{aligned}
+$$
+Completing the square gives $\pmb m=\pmb M\pmb X^\top\pmb\Sigma^{-1}\pmb y$ and $\pmb M=(\pmb X^\top\pmb\Sigma^{-1}\pmb X+\Omega^{-1})^{-1}$.
+
+As a function of $\tau_1^2,\ldots,\tau^2_p$, the target is proportional to
 $$
 \begin{aligned}
   &p(\beta_1,\ldots,\beta_p|\tau^2_1,\ldots,\tau^2_p)p(\tau_1^2,\ldots,\tau_p^2|\lambda)\\
-  =&\quad\prod_{i=1}^pN(0,\tau_i^2)\cdot\prod_{i=1}^p IG(1,\frac{\lambda^2}{2})
+  =&\quad\prod_{i=1}^pN(\beta_i;0,\tau_i^2)\cdot\prod_{i=1}^p IG(\tau^2_i;1,\frac{\lambda^2}{2})
 \end{aligned}
 $$
-Finally, as a function of $\lambda$, it's proportional to
+Finally, as a function of $\lambda$, the target distribution is proportional to
 $$
 \begin{aligned}
   &p(\tau_1^2,\ldots,\tau_p^2|\lambda)p(\lambda)\\
-  =&\quad\prod_{i=1}^pIG(1,\frac{\lambda^2}{2})\cdot IG(0.1,0.1)\\
+  =&\quad\prod_{i=1}^pIG(\tau_i^2;1,\frac{\lambda^2}{2})\cdot IG(\lambda; a,b)\\
 \end{aligned}
 $$
-Now I can build an algorithm to iteratively update through these conditional distributions.
-I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution $\pmb{\hat\beta}$.
+Now I can build an algorithm to iteratively update through these target distributions.
+I take the starting value of $\pmb\beta^{(0)}$ to be the least-squares solution $\pmb{\hat\beta}$ along with $\sigma^{2(0)}=\hat\sigma^{2}$, the MLE for $\sigma^2$.
 
 \begin{algorithm}
 \DontPrintSemicolon
 \setstretch{1.5}
   \KwResult{Samples from joint posterior $p(\pmb\beta,\sigma^2|\pmb y)$ }
   \For{s in \# samples}{
-    $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\;
-    $\pmb\beta^{s}\sim N_p(m,\pmb M)$\;
-    $m^\top=\qquad\qquad \pmb M=$
-    $\tau_1^2,\ldots,\tau_p^2 \sim N(\pmb\tau^{(s)},\delta\pmb I)^2$\;
-    
-    
-    
-    
-    $\lambda^{*}\sim N(\lambda.s,\delta)^2$
-    
-    
-    
-    
-    $\log(r)=\log p(\pmb y|\pmb\beta^{*},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})+\log p(\pmb\beta^{*}|\tau^2_1,\ldots,\tau^2_p)$\; 
-    $\qquad\qquad\qquad-\log p(\pmb y|\pmb\beta^{(s)},\tau_1^2,\ldots,\tau_p^2,\sigma^{2(s)})-\log p(\pmb\beta^{(s)}|\tau^2_1,\ldots,\tau^2_p)$\;
-    $u\sim Unif(0,1)$\;
-    \eIf{$\log(u)<\log(r)$}{
-        $\pmb\tau^{(s+1)}=\pmb\beta^*$
+    $\text{note: extra term due in } logr \text{ due to Jacobian of transformation}$
+    $\lambda^*\gets \exp(\log(\lambda^{(s)})+\varepsilon),\quad \varepsilon\sim N(0,\delta^2)$\;
+    $logr\gets\log\pi_\lambda(\lambda^*)-\log\pi_\lambda\lambda^{(s)}+\log\lambda^*-\log\lambda^{(s)}$\;
+    \eIf{$(\log unif(0,1)<logr)$}{
+        $\lambda^{(s+1)}\gets\lambda^*$
     }{
-        $\pmb\tau^{(s+1)}=\pmb\beta^{(s)}$
+        $\lambda^{(s+1)}\gets\lambda^{(s)}$
     }
-    }   
-  \caption{Gibbs and Metropolis}
+    \For{j in 1:p}{
+    $\text{note: extra term due in } logr \text{ due to Jacobian of transformation}$
+    $\tau^{2*}_j \gets \exp(\log(\tau^{2(s)}_j)+\varepsilon),\quad \varepsilon\sim N(0,\delta^2)$
+    $logr \gets
+      \log\pi_{\tau^2_j}(\tau_j^{2*}) -
+      \log\pi_{\tau^2_j}(\tau_j^{2(s)}) +
+      \log(\tau^{2*}_j)-\log(\tau^{2(s)}_j)$\;
+    \eIf{$(\log unif(0,1)<logr)$}{
+        $\tau^{2(s+1)}_j\gets\tau^{2*}_j$
+    }{
+        $\tau^{2(s+1)}_j\gets\tau^{2(s)}_j$
+    }
+  }
+    $\sigma^{2(s+1)}\sim IG(n/2+a, 2b+(\pmb{y}-\pmb{X\beta}^{(s)})^\top(\pmb{y}-\pmb{X\beta}^{(s)})/2)$\;
+    $\pmb\beta^{(s+1)}\sim N(\pmb m,\pmb M),\text{where}$\;
+    $\pmb M=(\pmb X^\top\pmb\Sigma^{-1}\pmb X+\pmb\Omega^{-1})^{-1} \text{ and }
+    \pmb m=\pmb M(\pmb X^\top\pmb\Sigma^{-1}\pmb y)$\;
+    $\pmb\Sigma = \sigma^{2(s+1)}\text{ and }
+    \pmb\Omega=\text{diag}(\tau_1^{2(s+1)},\ldots,\tau_p^{2(s+1)})$
+}
 \end{algorithm}
-
 
 \newpage
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part f.}]
 Implement such algorithm in \textsf{R} and compare your results with estimates obtained using \textbf{glmnet()}. In particular, you should test your results on the diabetes data available from lars, (use the matrix of predictors x).
 \end{tcolorbox}
-```{r, eval=F,warning=F}
+
+```{r, eval=T,warning=F}
+## Data processing
+sourceCpp("helperFunctions.cpp")
 set.seed(1)
 data("diabetes")
-loglambda.target <- function(lambda, a, b, tau2){
-  (-a - 1)*log(lambda) - (lambda^2/2 * sum(tau2)) - 1/(b*lambda)
-}
-logtau2j.target <- function(tau2j, lambda, betaj){
-  -log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j)
-}
-X <- cbind(rep(1,n),cbind(diabetes$x)); y <- diabetes$y; n <- nrow(X); p <- ncol(X)
-samples <- 50000;
+X <- cbind(rep(1,length(diabetes$x)),cbind(diabetes$x)); y <- diabetes$y; 
+n <- nrow(X); p <- ncol(X); samples <- 1000
+
+## Initialize starting values
 lambda <- 1
 tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
+sigma2 <- t(y-X%*%beta)%*%(y-X%*%beta)/n
 sigma2.chain <- lambda.chain <- rep(0,samples)
-beta.chain <- tau2.chain <- matrix(NA,nrow=p,ncol=samples)
-sigma2 <- var(y)
-sigma2.chain[1] <- sigma2
-beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.chain[1] <- lambda
-tau2.chain[,1] <- tau2
-post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
-index <- 1
-b<-1
+beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
+
+## MCMC
 for(s in 2:samples){
-  lambda.p <- exp(log(lambda)+rnorm(1,0,lambda))
-  logr <- loglambda.target(lambda.p,1,b,tau2)-loglambda.target(lambda,1,b,tau2)+log(lambda.p)-log(lambda)
-  if(log(runif(1))<logr){lambda <- lambda.p}
+  lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
+  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+  sigma2 <- sigma2Draw(beta, y, X)
+  mM <- betaMeanCov(y,X,sigma2,tau2)
+  beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
   lambda.chain[s] <- lambda
-  for(j in 1:length(tau2)){
-    tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
-    logr <-
-      logtau2j.target(tau2j.p, lambda, beta[j]) -
-      logtau2j.target(tau2[j], lambda, beta[j]) +
-      log(tau2j.p)-log(tau2[j])
-    if(log(runif(1))<logr){tau2[j] <- tau2j.p}
-  }
-  tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta),
-                         shape = lambda^2)
-  sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
-  M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
-  m <- M%*%t(X)%*%y/sigma2
-  beta <- t(rmvnorm(n=1,mean=m,sigma=M))
   sigma2.chain[s] <- sigma2
   beta.chain[,s] <- beta
   tau2.chain[,s] <- tau2
 }
-fit <- glmnet(X, y)
-glmnetCoef <- coef(fit,s=1)
-plot(fit, xvar="lambda")
+# Examine markov chains
+# plot(beta.chain[1,floor(samples/4):samples],type="l")
 
-fit <- glmnet(X, y)
-glmnetCoef <- coef(fit,s=1)
-# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
-# colnames(df) <- c("Least Square", "Bayes", "Glmnet")
-# df
-plot(log(lambda.chain[1:samples]), type="l")
-beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
-cbind(beta.ls,betaChain)
-beta.chain <- t(beta.chain)
-tau2.chain <- t(tau2.chain)
-plot(sigma2.chain[1:samples],type="l")
-plot(log(tau2.chain[,1]),type="l")
-plot(log(tau2.chain[,2]),type="l")
-plot((tau2.chain[,3]),type="l")
-plot((tau2.chain[,4]),type="l")
-plot((tau2.chain[,5]),type="l")
-plot((tau2.chain[,6]),type="l")
-plot((tau2.chain[,7]),type="l")
+# Plot table of coefficients from Glmnet and Bayesian Lasso
+comparison <- data.frame(
+  "Bayesian Lasso" = rowMeans(beta.chain[,floor(samples/4):samples]),
+  "Glmnet" = matrix(coef(glmnet(y=y,x=X),alpha=1,s=1)[-2])
+)
+kable(comparison, "latex", booktabs = T)
 ```
+
+- I initially notice the difference in parameterization between glment's lasso and my Bayesian lasso. I'm viewing the coefficients for $\lambda=1$ in glmnet and a value of $b=1$ for Bayesian lasso. As I'll show later, in this implementation of Bayesian lasso, shrinkage is very sensitive to the hyperparameter $b$ of $\lambda$.
+
 \newpage
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part g.}]
 Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of the posterior distribution of $\pmb\beta$ and $\sigma^2$, as hyper parameters a and b are changed. Explain clearly the rationale you use to assess sensitivity and provide recommendations for the analysis of the diabetes data.
 \end{tcolorbox}
-```{r, eval=F,warning=F}
-loglambda.target <- function(lambda, a, b, tau2){
-  (-a - 1)*log(lambda) - (lambda^2/2 * sum(tau2)) - 1/(b*lambda)
-}
-logtau2j.target <- function(tau2j, lambda, betaj){
-  -log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j)
-}
-
-set.seed(1)
-data("diabetes")
-X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X)
-X <- cbind(rep(1,n),X)
-p <- ncol(X)
-samples <- 5000;
-lambda <- 1
-tau2 <- rep(1000,p)
-beta <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2.chain <- lambda.chain <-rep(0,samples)
-beta.chain <-tau2.chain<- matrix(NA,nrow=p,ncol=samples)
-sigma2 <-var(y)
-sigma2.chain[1] <- sigma2
-beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.chain[1] <- lambda
-tau2.chain[,1] <- tau2
-s <- 2
+```{r, eval=T,warning=F}
+# Sequence of lambdas for comparison with glmnet
 lambdas <- seq(from=-12, to = -1, length.out = 12)
+
+# Keep track of posterior mean of beta for each fixed lambda
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
-index <- 1
-for(l in lambdas){
-for(s in 2:samples){
-  lambda <- exp(l)
-  # for(j in 1:length(tau2)){
-  #   tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
-  #   logr <-
-  #     logtau2j.target(tau2j.p, lambda, beta[j]) -
-  #     logtau2j.target(tau2[j], lambda, beta[j]) +
-  #     log(tau2j.p)-log(tau2[j])
-  #   if(log(runif(1))<logr){tau2[j] <- tau2j.p}
-  # }
-  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
-  sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
-  M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
-  m <- M%*%t(X)%*%y/sigma2
-  beta <- t(rmvnorm(n=1,mean=m,sigma=M))
-  sigma2.chain[s] <- sigma2
-  beta.chain[,s] <- beta
-  tau2.chain[,s] <- tau2
+
+for(i in 1:length(lambdas)){
+  for(s in 2:samples){
+    lambda <- exp(lambdas[i])
+    tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+    sigma2 <- sigma2Draw(beta, y, X)
+    mM <- betaMeanCov(y,X,sigma2,tau2)
+    beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+    sigma2.chain[s] <- sigma2
+    beta.chain[,s] <- beta
+    tau2.chain[,s] <- tau2
+  }
+  post.means[,i] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
 }
-post.means[,index] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
-index <- index +1
-}
+```
+
+```{r, echo=F, out.width = '50%'}
 fit <- glmnet(X, y)
-glmnetCoef <- coef(fit,s=1)
+glmnetCoef <- coef(fit,s=1, alpha=1)
 plot(fit, xvar="lambda")
 betaChain <- colMeans(beta.chain[,1:samples])
-
 plot(lambdas,post.means[2,],ylab="Coefficients",xlab="log lambdas",ylim=c(min(post.means),max(post.means)),type="l")
 lines(lambdas,post.means[2,])
 for(j in 3:p){
   points(lambdas,post.means[j,],ylab="Coefficients",xlab="log lambdas", col=j,type="l")
-lines(lambdas,post.means[j,], col=j)
+  lines(lambdas,post.means[j,], col=j)
 }
-
-fit <- glmnet(X, y)
-plot(fit,xvar = "lambda")
-glmnetCoef <- coef(fit,s=1)
-# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
-# colnames(df) <- c("Least Square", "Bayes", "Glmnet")
-# df
-beta.ls <- solve(t(X)%*%X)%*%t(X)%*%y
-sajd <- glmnetCoef
-cbind(beta.ls,post.means,coef(fit,s=1)[-2,])
 ```
+
+- Glmnet is on the left and Bayesian lasso on the right. These regularization paths look very similar.
 
 
 \newpage
@@ -334,83 +285,128 @@ cbind(beta.ls,post.means,coef(fit,s=1)[-2,])
 Free $\lambda$ and carry out a sensitivity analysis assessing the behavior of the posterior distribution of $\pmb\beta$ and $\sigma^2$, as hyper parameters a and b are changed. Explain clearly the rationale you use to assess sensitivity and provide recommendations for the analysis of the diabetes data.
 \end{tcolorbox}
 
-```{r, eval=F,warning=F}
-bs <- c(seq(from=0.001,to=1,length.out = 10),seq(from=1.5,to=20,length.out = 10))
-set.seed(1)
-data("diabetes")
-X <- cbind(diabetes$x); y <- diabetes$y; n <- nrow(X)
-X <- cbind(rep(1,n),X)
-p <- ncol(X)
+```{r, eval=T,warning=F}
+## Sequence of b's that define a path of hyperparameters for lambda
+bs <- c(seq(from=1e-5,to=20,length.out = 30))
 betasB <- matrix(0,nrow=p,ncol=length(bs))
-samples <- 5000;
-#lambda <- 1e-10
-lambda <- 1
-tau2 <- rep(1000,p)
-beta <- solve(t(X)%*%X)%*%t(X)%*%y
-sigma2.chain <- lambda.chain <-rep(0,samples)
-beta.chain <-tau2.chain<- matrix(NA,nrow=p,ncol=samples)
-sigma2 <-var(y)
-sigma2.chain[1] <- sigma2
-beta.chain[,1] <- solve(t(X)%*%X)%*%t(X)%*%y
-lambda.chain[1] <- lambda
-tau2.chain[,1] <- tau2
-s <- 2
-lambdas <- seq(from=-12, to = -2, length.out = 6)
-post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
-index <- 1
-bindex <- 1
-for(b in bs){
-for(s in 2:samples){
-  lambda.p <- exp(log(lambda)+rnorm(1,0,1))
-  # logr <- loglambdaTarget(lambda=lambda.p,tau2=tau2,a=1,b=b)-loglambdaTarget(lambda=lambda,tau2=tau2,a=1,b=b)+log(lambda.p)-log(lambda)
-  # if(log(runif(1))<logr){lambda <- lambda.p}
-  lambda <- lambdaDraw(proposed=lambda.p, current=lambda,tau2=tau2,a=1,b=b)
-  lambda.keep[s] <- lambda
-  # for(j in 1:length(tau2)){
-  #   tau2j.p <- exp(log(tau2[j])+rnorm(1,0,5))
-  #   logr <-
-  #     logtau2jTarget(tau2j.p, lambda, beta[j]) -
-  #     logtau2jTarget(tau2[j], lambda, beta[j]) +
-  #     log(tau2j.p)-log(tau2[j])
-  #   if(log(runif(1))<logr){tau2[j] <- tau2j.p}
-  # }
-  tau2 <- tau2Draw(current=tau2,beta=beta, lambda=lambda)
-  # tau2 <- 1/rinvgauss(n = length(beta), mean = lambda/abs(beta),
-  #                        shape = lambda^2)
-  sigma2 <- rinvgamma(1,shape=n/2+0.1,rate=(0.1+t(y-X%*%beta)%*%(y-X%*%beta)/2))
-  M <- solve(t(X)%*%X*1/sigma2+diag(1/tau2))
-  m <- M%*%t(X)%*%y/sigma2
-  beta <- t(rmvnorm(n=1,mean=m,sigma=M))
-  sigma2.chain[s] <- sigma2
-  beta.chain[,s] <- beta
-  tau2.chain[,s] <- tau2
-}
-post.means[,index] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
-post.meansindex <- index +1
-betasB[,bindex] <- rowMeans(beta.chain[,1000:samples])
-bindex <- bindex+1
-}
 
+## Keep track of posterior means for each b value whith lambda free
+post.means <- matrix(NA,nrow=p,ncol=length(bs))
 
-# df <- cbind(beta.ls,colMeans(beta.chain[floor(samples/4):samples,]),glmnetCoef[-1,])
-# colnames(df) <- c("Least Square", "Bayes", "Glmnet")
-# df
-plot(bs,betasB[2,],ylim = c(min(betasB),max(betasB)),type="l", main="Effect of b", ylab="Coefficients",xlab="b's")
-for(j in 3:length(bs)){
-  points(bs,betasB[j,],ylim = c(min(betasB[j,]),max(betasB[j,])), type="l", col=j)
+for(j in 1:length(bs)){
+  for(s in 2:samples){
+    lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1/bs[j])
+    tau2 <- tau2Draw(current=tau2,beta=beta, lambda=lambda)
+    sigma2 <- sigma2Draw(beta, y, X)
+    mM <- betaMeanCov(y,X,sigma2,tau2)
+    beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+    beta.chain[,s] <- beta
+  }
+betasB[,j] <- rowMeans(beta.chain[,floor(samples/4):samples])
 }
 ```
 
-```{r}
-library(Rcpp)
-library(rbenchmark)
-loglambdaTarget(lambda = 1,tau2 = c(1,2,3),a=1,b=1)
-loglambda.target(lambda = 1,tau2 = c(1,2,3),a=1,b=1)
-logtau2jTarget(1,1,1)
-logtau2j.target(1,1,1)
-tau2j <- betaj <- lambda <- 2
-(-log(sqrt(tau2j)) - 1/2*(1/tau2j*betaj^2 + lambda^2*tau2j))
+```{r, echo=F, out.width = '50%'}
+plot(bs,betasB[2,],ylim = c(min(betasB),max(betasB)),type="l", main="Effect of 1/b", ylab="Coefficients",xlab="1/b's")
+for(i in 3:p){
+  lines(smooth.spline(bs,betasB[i,], spar=0.5), col=i)
+  #plot(smoothingSpline, type="l") 
+  #lines(spline(bs,betasB[i,], method = "natural"), col=i)
+}
 ```
+
+- Though I didn't include the plots, the shrinkage of coefficients seemed very robust to changes in $a$ for fixed $b$, so I chose to fix $a=1$ and focus on varying $b$. From the plot, I notice as $1/b$ approaches zero, the coefficients approach the least-squares estimates. As $1\beta$ increases, there's an increasing amount of shrinkage towards zero. This matches behavior of the regularization paths in part g as $lambda$ is fixed and increasing.
+
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part e.}]
+\texttt{C++} Helper functions.
+\end{tcolorbox}
+```{Rcpp, eval=F}
+#include <cmath>
+#include <math.h>
+#include <random>
+#include <RcppArmadillo.h>
+using namespace Rcpp;
+using namespace std;
+
+// [[Rcpp::depends(RcppArmadillo)]]
+
+double loglambdaTarget(double lambda, vector<double> tau2, double a, double b) {
+  return((-a-1)*log(lambda)-(pow(lambda,2)/2*accumulate(tau2.begin(),tau2.end(),0))-1/(b*lambda));
+}
+
+double logtau2jTarget(double tau2j, double lambda, double betaj){
+  return(-log(sqrt(tau2j)) - 1.0/2.0*(1.0/tau2j*pow(betaj,2) + pow(lambda,2)*tau2j));
+}
+
+// [[Rcpp::export]]
+double lambdaDraw(double current, vector<double> tau2, double a, double b){
+  std::random_device rd;
+  std::mt19937 mt(rd());
+  std::uniform_real_distribution<double> dist(0, 1.0);
+  std::normal_distribution<double> norm(0, current);
+  double proposed = exp(log(current)+norm(mt));
+  double logr = loglambdaTarget(proposed,tau2,1,b)-
+    loglambdaTarget(current,tau2,1,b)+log(proposed)-
+    log(current);
+  if(log(dist(mt))<logr){
+    current = proposed;
+  }
+  return current;
+}
+
+// [[Rcpp::export]]
+vector<double> tau2Draw(vector<double> current, vector<double> beta, double lambda){
+  std::random_device rd;
+  std::mt19937 mt(rd());
+  std::uniform_real_distribution<double> dist(0, 1.0);
+  std::normal_distribution<double> norm(0, 1);
+  for(int j=0;j < current.size(); j++){
+    double tau2j_proposed = exp(log(current[j])+norm(mt));
+    double logr =
+      logtau2jTarget(tau2j_proposed, lambda, beta[j]) -
+      logtau2jTarget(current[j], lambda, beta[j]) +
+      log(tau2j_proposed)-log(current[j]);
+    if(log(dist(mt)) < logr){
+      current[j] = tau2j_proposed;
+    }
+  }
+  return current;
+}
+
+// [[Rcpp::export]]
+double sigma2Draw(const arma::vec & beta, const arma::vec & y, const arma::mat & X){
+  std::random_device rd;
+  std::mt19937 mt(rd());
+  int n = X.n_rows;
+  arma::colvec coef = arma::solve(X, y);
+  arma::colvec resid = y - X*coef;
+  double rss = arma::as_scalar(arma::trans(resid)*resid);
+  std::gamma_distribution<double> gamma(n/2.0+0.1,1.0/(rss/2.0+0.1));
+  return 1.0/gamma(mt);
+}
+
+// [[Rcpp::export]]
+List betaMeanCov(const arma::vec & y, const arma::mat & X, double sigma2, const arma::vec & tau2){
+  std::random_device rd;
+  std::mt19937 mt(rd());
+  int p = X.n_cols;
+  arma::mat I = arma::eye(p,p);
+  arma::mat tau2_inv = arma::inv(arma::diagmat(tau2));
+  arma::mat M = arma::inv(X.t()*X/sigma2+tau2_inv);
+  arma::colvec m = M*X.t()*y/sigma2;
+  return List::create(Named("cov") = M, Named("mean")= m);
+}
+
+
+// List mcmc(double lambda, double sigma2, const arma::vec & tau2, const arma::vec & beta2){
+//   
+//   return List::create(Named("beta.chain") = M, Named("sigma2.chain")= m,
+//                       Named("tau2.chain") = M, Named("lambda.chain") = M);
+// }
+```
+
+
 
 
 

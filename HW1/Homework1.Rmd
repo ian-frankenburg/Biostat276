@@ -219,7 +219,8 @@ for(s in 2:samples){
   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
   sigma2 <- sigma2Draw(beta, y, X)
   mM <- betaMeanCov(y,X,sigma2,tau2)
-  beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  beta <- rmvnorm_cpp(1,mM$mean, mM$cov)
   lambda.chain[s] <- lambda
   sigma2.chain[s] <- sigma2
   beta.chain[,s] <- beta

@@ -203,7 +203,7 @@ sourceCpp("helperFunctions.cpp")
 set.seed(1)
 data("diabetes")
 X <- cbind(rep(1,length(diabetes$x)),cbind(diabetes$x)); y <- diabetes$y; 
-n <- nrow(X); p <- ncol(X); samples <- 1000
+n <- nrow(X); p <- ncol(X); samples <- 10000
 
 ## Initialize starting values
 lambda <- 1
@@ -212,14 +212,15 @@ beta <- solve(t(X)%*%X)%*%t(X)%*%y
 sigma2 <- t(y-X%*%beta)%*%(y-X%*%beta)/n
 sigma2.chain <- lambda.chain <- rep(0,samples)
 beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
-
+s <- 1
 ## MCMC
 for(s in 2:samples){
   lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
   sigma2 <- sigma2Draw(beta, y, X)
   mM <- betaMeanCov(y,X,sigma2,tau2)
-  beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
   lambda.chain[s] <- lambda
   sigma2.chain[s] <- sigma2
   beta.chain[,s] <- beta

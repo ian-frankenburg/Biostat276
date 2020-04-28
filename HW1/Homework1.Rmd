@@ -210,25 +210,32 @@ lambda <- 1
 tau2 <- rep(1000,p)
 beta <- solve(t(X)%*%X)%*%t(X)%*%y
 sigma2 <- t(y-X%*%beta)%*%(y-X%*%beta)/n
+
+tau2Start <- rep(1000,p)
+betaStart <- solve(t(X)%*%X)%*%t(X)%*%y
+sigma2Start <- t(y-X%*%beta)%*%(y-X%*%beta)/n
+
 sigma2.chain <- lambda.chain <- rep(0,samples)
 beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
-s <- 1
 ## MCMC
-# for(s in 2:samples){
-#   ####
-#   ### FIX X'X and known computations a priori
-#   ####
-#   lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
-#   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
-#   sigma2 <- sigma2Draw(beta, y, X)
-#   mM <- betaMeanCov(y,X,sigma2,tau2)
-#   #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
-#   beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
-#   lambda.chain[s] <- lambda
-#   sigma2.chain[s] <- sigma2
-#   beta.chain[,s] <- beta
-#   tau2.chain[,s] <- tau2
-# }
+start_time <- Sys.time()
+for(s in 2:samples){
+  ####
+  ### FIX X'X and known computations a priori
+  ####
+  lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
+  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+  sigma2 <- sigma2Draw(y, X)
+  mM <- betaMeanCov(y,X,sigma2,tau2)
+  #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
+  lambda.chain[s] <- lambda
+  sigma2.chain[s] <- sigma2
+  beta.chain[,s] <- beta
+  tau2.chain[,s] <- tau2
+}
+end_time <- Sys.time()
+end_time - start_time
 
 # Examine markov chains
 # plot(beta.chain[1,floor(samples/4):samples],type="l")
@@ -254,6 +261,7 @@ lambdas <- seq(from=-12, to = -1, length.out = 12)
 # Keep track of posterior mean of beta for each fixed lambda
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
 
+start_time <- Sys.time()
 for(i in 1:length(lambdas)){
   # for(s in 2:samples){
   #   lambda <- exp(lambdas[i])
@@ -265,13 +273,17 @@ for(i in 1:length(lambdas)){
   #   beta.chain[,s] <- beta
   #   tau2.chain[,s] <- tau2
   # }
-  run <- mcmc(samples, y, X)
+  
+  run <- mcmc(samples, y, X, betaStart, tau2Start)
   lambda.chain <- run$lambda.chain
   sigma2.chain <- run$sigma2.chain
   tau2.chain <- run$tau2.chain
   beta.chain <- run$beta.chain
+  beta.chain <- matrix(beta.chain,p,samples)
   post.means[,i] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
 }
+end_time <- Sys.time()
+end_time - start_time
 ```
 
 ```{r, echo=F, out.width = '50%'}

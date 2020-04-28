@@ -15,6 +15,7 @@ double logtau2jTarget(double tau2j, double lambda, double betaj){
   return(-log(sqrt(tau2j)) - 1.0/2.0*(1.0/tau2j*pow(betaj,2) + pow(lambda,2)*tau2j));
 }
 
+// [[Rcpp::export]]
 double lambdaDraw(double current, vector<double> tau2, double a, double b){
   //std::random_device rd;
   //std::mt19937 mt(rd());
@@ -32,6 +33,7 @@ double lambdaDraw(double current, vector<double> tau2, double a, double b){
   return current;
 }
 
+// [[Rcpp::export]]
 vector<double> tau2Draw(vector<double> current, vector<double> beta, double lambda){
   // std::random_device rd;
   // std::mt19937 mt(rd());
@@ -54,6 +56,7 @@ vector<double> tau2Draw(vector<double> current, vector<double> beta, double lamb
   return current;
 }
 
+// [[Rcpp::export]]
 double sigma2Draw(const arma::vec & y, const arma::mat & X){
   // std::random_device rd;
   // std::mt19937 mt(rd());
@@ -66,17 +69,20 @@ double sigma2Draw(const arma::vec & y, const arma::mat & X){
   return 1.0/arma::as_scalar(v);
 }
 
-List betaMeanCov(const arma::vec & y, const arma::mat & X, arma::vec sigma2, arma::vec tau2){
+// [[Rcpp::export]]
+List betaMeanCov(const arma::vec & y, const arma::mat & X, double sigma2, vector<double> tau2){
   // std::random_device rd;
   // std::mt19937 mt(rd());
   int p = X.n_cols;
+  arma::vec armaTau2(tau2);
   arma::mat I = arma::eye(p,p);
-  arma::mat tau2_inv = arma::inv(arma::diagmat(tau2));
+  arma::mat tau2_inv = arma::inv(arma::diagmat(armaTau2));
   arma::mat M = arma::inv(X.t()*X/sigma2+tau2_inv);
   arma::colvec m = M*X.t()*y/sigma2;
   return List::create(Named("cov") = M, Named("mean")= m);
 }
 
+// [[Rcpp::export]]
 vector<double> rmvnorm_cpp(int n, const arma::vec& mu, const arma::mat& Sigma) {
   unsigned int p = Sigma.n_cols;
   // First draw N x P values from a N(0,1)
@@ -91,17 +97,23 @@ vector<double> rmvnorm_cpp(int n, const arma::vec& mu, const arma::mat& Sigma) {
 }
 
 // [[Rcpp::export]]
-List mcmc(double numSamples, const arma::vec & y, const arma::mat & X){
+List mcmc(double numSamples, const arma::vec & y, const arma::mat & X,
+          vector<double> betaStart, vector<double> tau2Start){
   int p = X.n_cols;
   // 
-  arma::vec lambdaChain = arma::ones(numSamples);
-  arma::vec sigma2Chain = arma::ones(numSamples);
-  arma::mat tau2Chain(p,numSamples);
-  arma::mat betaChain(p,numSamples);
-
+  // arma::vec lambdaChain = arma::ones(numSamples);
+  // arma::vec sigma2Chain = arma::ones(numSamples);
+  // arma::vec tau2Chain(numSamples * p);
+  // arma::vec betaChain(numSamples * p);
+  vector<double> lambdaChain(numSamples, 1);
+  vector<double> sigma2Chain(numSamples, 1);
+  vector<double> tau2Chain(numSamples*p, 1);
+  vector<double> betaChain(numSamples*p, 1);
+  
   // std::random_device rd;
   // std::mt19937 mt(rd());
   
+  arma::vec armaTau2(tau2Start);
   arma::mat I = arma::eye(p,p);
   arma::mat tau2_inv = arma::eye(p,p);
   arma::mat M = arma::eye(p,p);
@@ -110,25 +122,28 @@ List mcmc(double numSamples, const arma::vec & y, const arma::mat & X){
   
   double lambda = 1;
   double sigma2 = 1;
-  vector<double> beta(p, 0.0);
-  vector<double> tau2(p, 1.0);
-  
+  vector<double> beta = betaStart;
+  vector<double> tau2 = tau2Start;
+
   for(int s=0; s<numSamples; s++){
     lambda = lambdaDraw(lambda, tau2, 1, 1);
     tau2 = tau2Draw(tau2, beta, lambda);
     sigma2 = sigma2Draw(y, X);
-    arma::vec tau2_(tau2);
-    tau2_inv = arma::inv(arma::diagmat(tau2_));
+    armaTau2 = tau2;
+    tau2_inv = arma::inv(arma::diagmat(armaTau2));
     M = arma::inv(X.t()*X/sigma2+tau2_inv);
     m = M*X.t()*y/sigma2;
     beta = rmvnorm_cpp(1,m,M);
     
     lambdaChain[s] = lambda;
     sigma2Chain[s]= sigma2;
-    arma::colvec armaTau2(tau2);
-    tau2Chain.insert_cols(s, armaTau2);
-    arma::colvec armaBeta(beta);
-    betaChain.insert_cols(s, armaBeta);
+    tau2Chain.insert(tau2Chain.end(), std::begin(tau2), std::end(tau2));
+    betaChain.insert(betaChain.end(), std::begin(beta), std::end(beta));
+    
+    // arma::colvec armaTau2(tau2);
+    // tau2Chain.insert_cols(s, armaTau2);
+    // arma::colvec armaBeta(beta);
+    // betaChain.insert_cols(s, armaBeta);
   }
   return List::create(Named("beta.chain") = betaChain, Named("sigma2.chain")= sigma2Chain,
                       Named("tau2.chain") = tau2Chain, Named("lambda.chain") = lambdaChain);

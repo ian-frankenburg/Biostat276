@@ -215,6 +215,9 @@ beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
 s <- 1
 ## MCMC
 for(s in 2:samples){
+  ####
+  ### FIX X'X and known computations a priori
+  ####
   lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
   sigma2 <- sigma2Draw(beta, y, X)

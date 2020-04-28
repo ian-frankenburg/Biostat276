@@ -214,21 +214,22 @@ sigma2.chain <- lambda.chain <- rep(0,samples)
 beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
 s <- 1
 ## MCMC
-for(s in 2:samples){
-  ####
-  ### FIX X'X and known computations a priori
-  ####
-  lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
-  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
-  sigma2 <- sigma2Draw(beta, y, X)
-  mM <- betaMeanCov(y,X,sigma2,tau2)
-  #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
-  beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
-  lambda.chain[s] <- lambda
-  sigma2.chain[s] <- sigma2
-  beta.chain[,s] <- beta
-  tau2.chain[,s] <- tau2
-}
+# for(s in 2:samples){
+#   ####
+#   ### FIX X'X and known computations a priori
+#   ####
+#   lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
+#   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+#   sigma2 <- sigma2Draw(beta, y, X)
+#   mM <- betaMeanCov(y,X,sigma2,tau2)
+#   #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+#   beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
+#   lambda.chain[s] <- lambda
+#   sigma2.chain[s] <- sigma2
+#   beta.chain[,s] <- beta
+#   tau2.chain[,s] <- tau2
+# }
+
 # Examine markov chains
 # plot(beta.chain[1,floor(samples/4):samples],type="l")
 
@@ -254,16 +255,21 @@ lambdas <- seq(from=-12, to = -1, length.out = 12)
 post.means <- matrix(NA,nrow=p,ncol=length(lambdas))
 
 for(i in 1:length(lambdas)){
-  for(s in 2:samples){
-    lambda <- exp(lambdas[i])
-    tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
-    sigma2 <- sigma2Draw(beta, y, X)
-    mM <- betaMeanCov(y,X,sigma2,tau2)
-    beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
-    sigma2.chain[s] <- sigma2
-    beta.chain[,s] <- beta
-    tau2.chain[,s] <- tau2
-  }
+  # for(s in 2:samples){
+  #   lambda <- exp(lambdas[i])
+  #   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+  #   sigma2 <- sigma2Draw(beta, y, X)
+  #   mM <- betaMeanCov(y,X,sigma2,tau2)
+  #   beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+  #   sigma2.chain[s] <- sigma2
+  #   beta.chain[,s] <- beta
+  #   tau2.chain[,s] <- tau2
+  # }
+  run <- mcmc(samples, y, X)
+  lambda.chain <- run$lambda.chain
+  sigma2.chain <- run$sigma2.chain
+  tau2.chain <- run$tau2.chain
+  beta.chain <- run$beta.chain
   post.means[,i] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
 }
 ```
@@ -408,6 +414,11 @@ List betaMeanCov(const arma::vec & y, const arma::mat & X, double sigma2, const 
 //   return List::create(Named("beta.chain") = M, Named("sigma2.chain")= m,
 //                       Named("tau2.chain") = M, Named("lambda.chain") = M);
 // }
+```
+
+```{r}
+
+
 ```
 
 

@@ -217,23 +217,25 @@ sigma2Start <- t(y-X%*%beta)%*%(y-X%*%beta)/n
 
 sigma2.chain <- lambda.chain <- rep(0,samples)
 beta.chain <- tau2.chain <- matrix(0,nrow=p,ncol=samples)
+
 ## MCMC
+# for(s in 2:samples){
+#   ####
+#   ### FIX X'X and known computations a priori
+#   ####
+#   lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
+#   tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
+#   sigma2 <- sigma2Draw(y, X)
+#   mM <- betaMeanCov(y,X,sigma2,tau2)
+#   #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
+#   beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
+#   lambda.chain[s] <- lambda
+#   sigma2.chain[s] <- sigma2
+#   beta.chain[,s] <- beta
+#   tau2.chain[,s] <- tau2
+# }
 start_time <- Sys.time()
-for(s in 2:samples){
-  ####
-  ### FIX X'X and known computations a priori
-  ####
-  lambda <- lambdaDraw(current=lambda,tau2=tau2,a=1,b=1)
-  tau2 <- tau2Draw(current=tau2,beta=beta,lambda=lambda)
-  sigma2 <- sigma2Draw(y, X)
-  mM <- betaMeanCov(y,X,sigma2,tau2)
-  #beta <- t(rmvnorm(n=1,mean=mM$mean,sigma=mM$cov))
-  beta <- rmvnorm_cpp(1,mu=mM$mean, Sigma=mM$cov)
-  lambda.chain[s] <- lambda
-  sigma2.chain[s] <- sigma2
-  beta.chain[,s] <- beta
-  tau2.chain[,s] <- tau2
-}
+run <- mcmc(samples, y, X, betaStart, tau2Start)
 end_time <- Sys.time()
 end_time - start_time
 
@@ -273,14 +275,8 @@ for(i in 1:length(lambdas)){
   #   beta.chain[,s] <- beta
   #   tau2.chain[,s] <- tau2
   # }
-  
-  run <- mcmc(samples, y, X, betaStart, tau2Start)
-  lambda.chain <- run$lambda.chain
-  sigma2.chain <- run$sigma2.chain
-  tau2.chain <- run$tau2.chain
-  beta.chain <- run$beta.chain
-  beta.chain <- matrix(beta.chain,p,samples)
-  post.means[,i] <- matrix(rowMeans(beta.chain[,floor(samples/4):samples]),nrow = p)
+  run <- mcmc(samples, y, X, betaStart, tau2Start, lambdas[i])
+  post.means[,i] <- run$beta.chain
 }
 end_time <- Sys.time()
 end_time - start_time
@@ -290,7 +286,7 @@ end_time - start_time
 fit <- glmnet(X, y)
 glmnetCoef <- coef(fit,s=1, alpha=1)
 plot(fit, xvar="lambda")
-betaChain <- colMeans(beta.chain[,1:samples])
+betaChain <- beta.chain
 plot(lambdas,post.means[2,],ylab="Coefficients",xlab="log lambdas",ylim=c(min(post.means),max(post.means)),type="l")
 lines(lambdas,post.means[2,])
 for(j in 3:p){

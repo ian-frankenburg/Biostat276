@@ -98,17 +98,16 @@ vector<double> rmvnorm_cpp(int n, const arma::vec& mu, const arma::mat& Sigma) {
 
 // [[Rcpp::export]]
 List mcmc(double numSamples, const arma::vec & y, const arma::mat & X,
-          vector<double> betaStart, vector<double> tau2Start){
+          vector<double> betaStart, vector<double> tau2Start, double lambda){
   int p = X.n_cols;
-  // 
   // arma::vec lambdaChain = arma::ones(numSamples);
   // arma::vec sigma2Chain = arma::ones(numSamples);
   // arma::vec tau2Chain(numSamples * p);
   // arma::vec betaChain(numSamples * p);
-  vector<double> lambdaChain(numSamples, 1);
-  vector<double> sigma2Chain(numSamples, 1);
-  vector<double> tau2Chain(numSamples*p, 1);
-  vector<double> betaChain(numSamples*p, 1);
+  double lambdaChain = 0;
+  double sigma2Chain = 0;
+  vector<double> tau2Chain(tau2Start);
+  vector<double> betaChain(betaStart);
   
   // std::random_device rd;
   // std::mt19937 mt(rd());
@@ -119,14 +118,14 @@ List mcmc(double numSamples, const arma::vec & y, const arma::mat & X,
   arma::mat M = arma::eye(p,p);
   arma::colvec m = arma::ones(p);
 
-  
-  double lambda = 1;
   double sigma2 = 1;
   vector<double> beta = betaStart;
   vector<double> tau2 = tau2Start;
 
-  for(int s=0; s<numSamples; s++){
-    lambda = lambdaDraw(lambda, tau2, 1, 1);
+  for(int s = 0; s < numSamples; s++){
+    if(lambda == 0){
+      lambda = lambdaDraw(lambda, tau2, 1, 1);
+    }
     tau2 = tau2Draw(tau2, beta, lambda);
     sigma2 = sigma2Draw(y, X);
     armaTau2 = tau2;
@@ -135,11 +134,19 @@ List mcmc(double numSamples, const arma::vec & y, const arma::mat & X,
     m = M*X.t()*y/sigma2;
     beta = rmvnorm_cpp(1,m,M);
     
-    lambdaChain[s] = lambda;
-    sigma2Chain[s]= sigma2;
-    tau2Chain.insert(tau2Chain.end(), std::begin(tau2), std::end(tau2));
-    betaChain.insert(betaChain.end(), std::begin(beta), std::end(beta));
+    lambdaChain = (lambdaChain + lambda)/2;
+    sigma2Chain= (sigma2Chain + sigma2)/2;
     
+    std::transform(tau2.begin( ), tau2.end( ),
+                     tau2Chain.begin( ), tau2.begin( ), std::plus<double>( ));
+    std::transform(betaChain.begin( ), betaChain.end( ),
+                   beta.begin( ), betaChain.begin( ), std::plus<double>( ));
+    
+    for(int i=0;i<betaChain.size();i++){
+      tau2Chain[i] = .5*tau2Chain[i];
+      betaChain[i] = .5*betaChain[i];
+    }
+
     // arma::colvec armaTau2(tau2);
     // tau2Chain.insert_cols(s, armaTau2);
     // arma::colvec armaBeta(beta);

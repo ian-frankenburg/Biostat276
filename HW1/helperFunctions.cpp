@@ -137,8 +137,8 @@ List mcmc(double numSamples, const arma::vec & y, const arma::mat & X,
     lambdaChain = (lambdaChain + lambda)/2;
     sigma2Chain= (sigma2Chain + sigma2)/2;
     
-    std::transform(tau2.begin( ), tau2.end( ),
-                     tau2Chain.begin( ), tau2.begin( ), std::plus<double>( ));
+    std::transform(tau2Chain.begin( ), tau2Chain.end( ),
+                     tau2.begin( ), tau2Chain.begin( ), std::plus<double>( ));
     std::transform(betaChain.begin( ), betaChain.end( ),
                    beta.begin( ), betaChain.begin( ), std::plus<double>( ));
     

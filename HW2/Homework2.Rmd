@@ -1,21 +1,23 @@
 ---
-title: "Homework 1"
+title: "Homework 2"
 author: "Ian Frankenburg"
-date: "4/7/2020"
+date: "5/8/2020"
 header-includes:
    - \usepackage{bm}
    - \usepackage{algorithmic}
-   - \usepackage[]{algorithm2e}
+   - \usepackage{algorithm2e}
    - \usepackage{tikz,lipsum,lmodern}
    - \usepackage[most]{tcolorbox}
    - \usepackage{setspace}
    - \usepackage{cancel}
+   
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.pos = 'H')
+set.seed(123)
 library(kableExtra)
 library(latex2exp)
 library(mvtnorm)
@@ -33,26 +35,56 @@ library(Rcpp)
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (1).}]
 Describe and implement a Metropolis-Hastings algorithm designed to obtain a MC with stationary distribution $p(\beta|Y)$
 \end{tcolorbox}
-First I want to think about the likelihood times prior: $\prod p(y_i|X_i,\beta)\times p(\beta|X_i)$. This is theoretically how I'd do it, but a major conceptual point here is that it's going to be hard to generate a sensible multivariate proposal distribution. Instead, I'm gonna sample component-wise ie sample each $\beta_j$ one at a time. The downside of this is mixing rate: Imagine I could sample a sub-vector of $\pmb\beta$. Then I could take advantage of possible correlation to make better proposals and speed up convergence.
-This will give me a posterior target, afterwhich I can implement an MCMC-type algirithm
-```{r, eval=F}
-logtarget <- function(y,X, beta){
-  n <- nrow(X)
-  likelihood <- p <- 0
-  for(i in 1:n){
-    p <- pnorm(t(X[i,])%*%beta) 
-    likeihood <- log(p)^y[i] + log(1-p)^(1-y[i]) + likeihood
-  }
-  return(likelihood - 1/(2*n) *t(X%*%beta)%*%(X%*%beta))
+This MCMC implementation is pretty strightforward. I know my target $p(\pmb\beta|\pmb y)$ is propportional to 
+$$
+\Big[\prod_{i=1}^n p_i^{y_i}(1-p_i)^{1-y_i}\Big]\exp\Big(-\frac{1}{2n}\pmb\beta^\top(X^\top X\pmb)\pmb\beta\Big),\text{ where } p_i =\Phi(x_i^\top\pmb\beta).
+$$
+My Metropolis algorithm will make symmetric proposals based around the current iteration of $\pmb\beta$ with variance defined to be the inverse sample covariance $n(X^\top X)^{-1}:$
+$$
+\pmb\beta^*\sim N(\pmb\beta^{(s)},n(X^\top X)^{-1}).
+$$
+
+```{r, fig.align="center"}
+require(survival)
+data <- infert
+target <- function(y, x, xtx, beta, n){
+  p <- pnorm(x%*%beta)
+  return(sum(y*log(p)+(1-y)*log(1-p))-1/(2*n)*t(beta)%*%xtx%*%beta)
 }
-fit <- summary(glm(y~X,family=binomial(link="probit")))
-beta <- fit$coeff[,1]
-for(s in 1:samples){
-  # propose new beta based on symmetric distribution
-  
-  # evaluate step in MH
-  
+samples <- 5000
+y <- data$case
+n <- length(y)
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+ncolx <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncol(x)),xtx_inv*n))
+beta.chain <- matrix(0,nrow=ncolx,ncol=samples)
+beta.chain[,1] <- beta
+for(s in 2:samples){
+  beta_new <- t(rmvnorm(1,as.vector(beta), xtx_inv))
+  logr <- target(y,x,xtx,beta_new,n)-target(y,x,xtx,beta,n)
+  if(log(runif(1)) < logr){beta <- beta_new}
+  beta.chain[,s] <- beta
 }
+```
+
+```{r, echo=F}
+par(mfrow=c(3,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="probit")))
+)
+df
 ```
 
 \newpage
@@ -78,6 +110,7 @@ $$
 p(\pmb\beta|\pmb y, \pmb z)&\propto p(\pmb y, \pmb z|\pmb\beta)p(\pmb\beta)\\
 &=\xcancel{p(\pmb y|\pmb\beta, \pmb z)}p(\pmb z|\pmb \beta)p(\pmb\beta)=p(\pmb z|\pmb \beta)p(\pmb\beta)\\
 &=N(\pmb z;X\pmb\beta,\pmb I)N(\pmb\beta;\pmb 0,n(X^\top X)^{-1})\\
+&=N(\frac{n}{n+1}(X^\top X)^{-1}X^\top\pmb y,\frac{n}{n+1}(X^\top X)^{-1})
 \end{aligned}
 $$
 
@@ -102,18 +135,122 @@ p(z_i|\pmb y, \pmb \beta)&\propto p(\pmb y, \pmb \beta, z_i)\propto p(y|\pmb\bet
 $$
 Now I can implement a Gibbs sampler to iteratively draw from these conditionals.
 
-\begin{algorithm}
-\DontPrintSemicolon
-\setstretch{1.5}
-  \KwResult{Samples from joint posterior $p(\pmb\beta,\pmb z|\pmb y)$ }
-  \For{s in \# samples}{
-    
+
+```{r, fig.align="center", warning=F}
+require(truncnorm)
+samples <- 5000
+data <- infert
+y <- data$case
+n <- length(y)
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+p <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncol(x)),xtx_inv*n))
+beta.chain <- matrix(0,nrow=p,ncol=samples)
+beta.chain[,1] <- beta
+z <- t(rmvnorm(1,x%*%beta,sigma=diag(n)))
+for(s in 2:samples){
+  beta <- t(rmvnorm(1, n/(n+1)*xtx_inv%*%t(x)%*%z, n/(n+1)*xtx_inv))
+  # truncated normal
+  for(i in 1:n){
+    if(y[i]==1){
+      z[i] <- rtruncnorm(1, a = 0, b = Inf, mean = matrix(x[i,],ncol=p)%*%beta, sd=1)
+    }else{
+      z[i] <- rtruncnorm(1, a = -Inf, b = 0, mean = matrix(x[i,],ncol=p)%*%beta, sd=1)
+    }
+  }
+  beta.chain[,s] <- beta
 }
-\end{algorithm}
+```
+
+```{r, echo=F, fig.align="center", warning=F}
+par(mfrow=c(3,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="probit")))
+)
+df
+```
 
 \newpage
-\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (5).}]
-For logit model, describe and implement a data augmented (DA-MCMC) strategy targeting $p(\beta|Y)$
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (3).}]
+Describe and implement a parameter expanded-data augmentation (PX-DA MCMC) algorithm targeting $p(\beta|Y)$.
+\end{tcolorbox}
+For this parameter-expanded model, I'll introduce another parameter $\alpha^2\sim IG(a,b)$ and I'll consider the transformation $w_i:=\alpha z_i$. Then I'll use a Gibbs sampler to sample iteratively from the conditionals
+$$
+\begin{aligned}
+p(\pmb\beta|\pmb y,\pmb w,\alpha)&\propto\prod_{i=1}^n N(w_i;\alpha x_i^\top\pmb\beta,\alpha^2)N(\pmb\beta;0,n(X^\top X)^{-1})\\
+&=N(Mm,M),\text{ where } M=\frac{n}{n+1}(X^\top X)^{-1}\text{ and } m=MX^\top\pmb w/\alpha\\
+p(w_i|\pmb y,\pmb \beta,\alpha)&=\begin{cases} 
+      N(w_i;\alpha x_i^\top\pmb \beta,\alpha^2)*\pmb1_{[0,\infty)}(w_i)  & \text{if }y_i=1\\
+      N(w_i;\alpha x_i^\top\pmb \beta,\alpha^2)*\pmb1_{(-\infty,0)}(w_i) & \text{if }y_i=0\\
+   \end{cases}\\
+p(\alpha^2|\pmb y,\pmb \beta,\pmb z)&=\prod_{i=1}^n N(w_i;\alpha x_i^\top\pmb\beta, \alpha^2)IG(\alpha^2;a,b)
+\end{aligned}
+$$
+
+```{r, fig.align="center"}
+require(truncnorm)
+samples <- 5000
+data <- infert
+y <- data$case
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+n <- nrow(x); p <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncol(x)),xtx_inv*n))
+beta.chain <- matrix(0,nrow=p,ncol=samples)
+beta.chain[,1] <- beta
+alpha2 <- 1
+z <- t(rmvnorm(1,x%*%beta,sigma=diag(n)))
+for(s in 2:samples){
+  beta <- t(rmvnorm(1, n/(n+1)*xtx_inv%*%t(x)%*%z/(sqrt(alpha2)), n/(n+1)*xtx_inv))
+  # truncated normal
+  for(i in 1:n){
+    if(y[i]==1){
+      z[i] <- rtruncnorm(1, a = 0, b = Inf, mean = matrix(x[i,],ncol=p)%*%beta, sd=1)
+    }else{
+      z[i] <- rtruncnorm(1, a = -Inf, b = 0, mean = matrix(x[i,],ncol=p)%*%beta, sd=1)
+    }
+  }
+  rss <- t((z-x%*%beta))%*%(z-x%*%beta)/2
+  d <- rchisq(1, df=n)
+  alpha2 <- as.numeric(sqrt(rss/d))
+  beta.chain[,s] <- beta
+}
+```
+
+```{r, echo=F, fig.align="center"}
+par(mfrow=c(3,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="probit")))
+)
+df
+```
+
+\newpage
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (6).}]
+For logit model, describe and a random walk MH targeting $p(\beta|Y)$
 \end{tcolorbox}
 
 Similar to the probit case, the posterior is intractible but can be written as
@@ -125,24 +262,58 @@ p(\beta|\pmb y)\propto&\prod_{i=1}^n p_i^{y_i}(1-p_i)^{1-y_i}p(\beta)\\
 \end{aligned}
 $$
 This will be my target in the random walk MH.
-Therefore, an algorithm might be 
-\begin{algorithm}
-\DontPrintSemicolon
-\setstretch{1.5}
-  \KwResult{Samples from joint posterior $p(\pmb\beta,\pmb z|\pmb y)$ }
-  \For{s in \# samples}{
-    $\ell(\beta) := \log L(\beta)=\sum_{i=1}^ny_ix_i^\top\beta-\log(1+e^{x_i^\top\beta})-\frac{1}{2n}\beta^\top(X^\top X)\beta$
+
+```{r, fig.align="center"}
+data <- infert
+y <- data$case
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+target <- function(y, x, xtx, beta, n){
+  p <- exp(x%*%beta)/(1+exp(x%*%beta))
+  return(sum(y*log(p)+(1-y)*log(1-p))-1/(2*n)*t(beta)%*%xtx%*%beta)
 }
-\end{algorithm}
+samples <- 5000
+n <- nrow(x); ncolx <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncol(x)),xtx_inv*n))
+beta.chain <- matrix(0,nrow=ncolx,ncol=samples)
+beta.chain[,1] <- beta
+for(s in 2:samples){
+  beta_new <- t(rmvnorm(1,as.vector(beta), xtx_inv))
+  logr <- target(y,x,xtx,beta_new,n)-target(y,x,xtx,beta,n)
+  if(log(runif(1)) < logr){beta <- beta_new}
+  beta.chain[,s] <- beta
+}
+```
+
+```{r, echo=F, fig.align="center"}
+par(mfrow=c(3,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="logit")))
+)
+df
+```
+
 
 \newpage
-\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (6).}]
+\begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (7).}]
 Describe and implement a Langevin-Hastings algorithm designed to obtain a MC with stationary distribution $p(\beta|Y)$
 \end{tcolorbox}
-The Langevin-Hastings algorithm will work by utilizing the a 2^{nd} order Taylor approximation of the target distribution. I'm going to use a component-wise MCMC algorithm, so I'm going to make proposals for each $\beta_j$
-Therefore, my proposal for $\beta_j$ at iteration $s$ will be something like
+The Langevin-Hastings algorithm will work by utilizing the a 2^{nd} order Taylor approximation of the target distribution. That way I can try to match the proposal to the target.
+
+If I was proposing for $\beta$ at iteration $s$, I'd use something like
 $$
-\beta_j^*\sim N\Big(\beta_j^{(s)}+\frac{1}{2}\sigma^2\frac{\partial}{\partial \beta_j^{(s)}}\log\big(p(\pmb y|\beta_j)p(\pmb\beta)\big), \sigma^2\pmb I\Big)
+\pmb\beta^*\sim N\Big(\pmb\beta^{(s)}+\frac{1}{2}\sigma^2\nabla\log\big(p(\pmb y|\pmb\beta^{(s)})p(\pmb\beta^{(s)})\big), \sigma^2\pmb I\Big)
 $$
 
 Earlier I showed the poserior is proportional to 
@@ -157,15 +328,123 @@ $$
 =&\sum_{i=1}^n[y_i -\frac{e^{x_i^\top\pmb \beta}}{1+e^{x_i^\top\pmb \beta}}]x_i^\top-\frac{1}{n}\pmb \beta^\top(X^\top X)
 \end{aligned}
 $$
-Therefore, the proposal will be of the form
-$$
-\begin{aligned}
-\beta_j^*&\sim N(\beta_j+\frac{1}{2}\sigma^2\frac{ \partial}{\partial\beta_j}\text{log-target}, \sigma^2)\\
-\end{aligned}
-$$
-Where $\frac{\partial}{\partial\beta_j}\text{log-target}$ is the $j$-th element of the gradient $\nabla$ computed previously.
+
+```{r}
+gradient <- function(y, x, xtx, beta, p){
+  n <- length(y)
+  return(t(y-p)%*%x-1/n*t(beta)%*%xtx)
+}
+target <- function(y, x, xtx, beta, n){
+  return(sum(y*log(p)+(1-y)*log(1-p))-1/(2*n)*t(beta)%*%xtx%*%beta)
+}
+data <- infert
+y <- data$case
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+samples <- 5000
+n <- nrow(x); ncolx <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncolx),xtx_inv*n))
+beta.chain <- matrix(0,nrow=ncolx,ncol=samples)
+beta.chain[,1] <- beta
+c <- 0.005
+num_accepted <- accept_ratio <- 0
+for(s in 2:samples){
+  p <- exp(x%*%beta)/(1+exp(x%*%beta))
+  grad <- gradient(y, x, xtx, beta, p)
+  beta_new <- t(rmvnorm(1,as.vector(beta) + c^2*as.vector(grad), c*diag(ncolx)))
+  logr <- target(y,x,xtx,beta_new,n)-target(y,x,xtx,beta,n)
+  if(log(runif(1)) < logr){
+    beta <- beta_new
+    num_accepted <- num_accepted+1
+  }
+  accept_ratio <- num_accepted/s
+  beta.chain[,s] <- beta
+}
+```
+
+```{r, echo=F, fig.align="center"}
+par(mfrow=c(2,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="probit")))
+)
+df
+```
+These chains look crazy, but I'm not sure what's happening. I think the tuning parameter $c$ is the culprit. 
+
+
+
+
+
 
 \newpage
 \begin{tcolorbox}[colback=blue!5!white,colframe=black!75!white,title={Part (7).}]
 Describe and implement an adaptive Metropolis-Hastings algorithm designed to obtain a MC with stationary distribution $p(\beta|Y)$
 \end{tcolorbox}
+I think in this in this problem, I'll make proposals at step $s$ such as 
+$$
+\beta^{*}\sim \beta^{(s)}+N(0,c\Sigma^{(s)})
+$$
+and adaptively change $c$ based on my acceptance ratio.
+
+```{r, fig.align="center"}
+data <- infert
+y <- data$case
+data$education <- as.numeric(as.factor(data$education))
+edu1 <- data$education==2; edu2 <- data$education==3
+x <- cbind(rep(1,n),data$age, data$parity, edu1, edu2, data$spontaneous, data$induced)
+target <- function(y, x, xtx, beta, n){
+  p <- exp(x%*%beta)/(1+exp(x%*%beta))
+  return(sum(y*log(p)+(1-y)*log(1-p))-1/(2*n)*t(beta)%*%xtx%*%beta)
+}
+samples <- 5000
+n <- nrow(x); ncolx <- ncol(x)
+xtx <- t(x)%*%x
+xtx_inv <- solve(xtx)
+beta <- t(rmvnorm(1,rep(0,ncol(x)),xtx_inv*n))
+beta.chain <- matrix(0,nrow=ncolx,ncol=samples)
+beta.chain[,1] <- beta
+num_accepted <- accept_ratio <- 0
+c <- 10
+for(s in 2:samples){
+  beta_new <- t(rmvnorm(1,as.vector(beta), c*xtx_inv))
+  logr <- target(y,x,xtx,beta_new,n)-target(y,x,xtx,beta,n)
+  if(log(runif(1)) < logr){
+    beta <- beta_new
+    num_accepted <- num_accepted+1
+  }
+  accept_ratio <- num_accepted/s
+  if(accept_ratio > 0.4){
+    c <- c+1
+  }else{
+    c <- c/2
+  }
+  beta.chain[,s] <- beta
+}
+```
+
+```{r, echo=F, fig.align="center"}
+par(mfrow=c(3,3))
+plot(beta.chain[1,],type="l")
+plot(beta.chain[2,],type="l")
+plot(beta.chain[3,],type="l")
+plot(beta.chain[4,],type="l")
+plot(beta.chain[5,],type="l")
+plot(beta.chain[6,],type="l")
+plot(beta.chain[7,],type="l")
+df <- rbind(
+  "Bayes" = rowMeans(beta.chain),
+  "GLM" = coef(glm(y~x[,-1],family=binomial(link="logit")))
+)
+df
+```
